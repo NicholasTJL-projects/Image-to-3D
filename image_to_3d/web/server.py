@@ -7,7 +7,7 @@ Endpoints
 GET  /                         the single-page frontend
 GET  /api/health               which backends are available on this server
 POST /api/jobs                 multipart upload: ``image`` (+ options) -> job
-POST /api/jobs/multiview       multipart upload: many ``images`` of one object -> splat (needs COLMAP)
+POST /api/jobs/multiview       multipart: many ``images`` or one ``video`` of one object -> splat (needs COLMAP)
 GET  /api/jobs/{id}            job status / progress / result file list
 GET  /api/jobs/{id}/files/{n}  result files (model.glb, splat.ply, depth.png, ...)
 """
@@ -117,28 +117,45 @@ async def create_job(
     return JSONResponse(job.to_dict(), status_code=202)
 
 
+VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+
+
 @app.post("/api/jobs/multiview")
 async def create_multiview_job(
-    images: list[UploadFile] = File(...),
+    images: list[UploadFile] = File([]),
+    video: UploadFile | None = File(None),
     iterations: int = Form(3000),
     downscale: int = Form(4),
     object_only: bool = Form(True),
+    max_frames: int = Form(80),
 ) -> JSONResponse:
-    """Photos of one object from many angles -> camera poses (COLMAP) -> Gaussian Splatting scene."""
+    """Photos from many angles, or a walk-around video -> COLMAP poses -> Gaussian Splatting scene."""
     if not multiview_enabled():
         raise HTTPException(501, "multi-view reconstruction needs COLMAP and PyTorch on the server")
-    if len(images) < 3:
-        raise HTTPException(400, "upload at least 3 photos taken from different angles (20+ recommended)")
+    if video is None and len(images) < 3:
+        raise HTTPException(400, "upload a short walk-around video or at least 3 photos (20+ recommended)")
     if len(images) > 300:
         raise HTTPException(400, "at most 300 photos per job")
     job = store.create("multiview", options={"iterations": iterations, "downscale": downscale, "photos": len(images),
-                                             "object_only": object_only})
+                                             "video": video is not None, "object_only": object_only})
     ws = store.dir(job.id)
     src_dir = ws / "upload"
     src_dir.mkdir(exist_ok=True)
-    for i, up in enumerate(images):
-        suffix = Path(up.filename or ".jpg").suffix.lower()[:8] or ".jpg"
-        (src_dir / f"img_{i:04d}{suffix}").write_bytes(await _read_upload(up))
+    source: Path = src_dir
+    is_video = video is not None
+    if is_video:
+        suffix = Path(video.filename or "capture.mp4").suffix.lower()[:8]
+        if suffix not in VIDEO_SUFFIXES:
+            suffix = ".mp4"
+        data = await video.read()
+        if len(data) > MAX_UPLOAD_MB * 8 * 1024 * 1024:  # videos may be larger than photos
+            raise HTTPException(413, f"video larger than {MAX_UPLOAD_MB * 8:g} MB")
+        source = src_dir / f"capture{suffix}"
+        source.write_bytes(data)
+    else:
+        for i, up in enumerate(images):
+            suffix = Path(up.filename or ".jpg").suffix.lower()[:8] or ".jpg"
+            (src_dir / f"img_{i:04d}{suffix}").write_bytes(await _read_upload(up))
 
     def run(job: Job, report) -> dict:
         from ..capture import CaptureConfig, capture
@@ -146,10 +163,23 @@ async def create_multiview_job(
         from ..pipeline import init_gaussians
         from ..train import TrainConfig, train
 
-        report("preparing photos", 0.05)
-        capture(str(src_dir), ws / "images", CaptureConfig(max_side=1280, min_blur=0.0))
-        report("recovering camera poses (COLMAP)", 0.15)
-        scene = run_sfm(ws, matcher="exhaustive")  # unordered photos: match every pair
+        if is_video:
+            report("extracting sharp frames from the video", 0.05)
+            # aim for ~max_frames frames spread over the clip, dropping the blurriest tenth
+            import cv2 as _cv2
+            cap = _cv2.VideoCapture(str(source))
+            n_total = int(cap.get(_cv2.CAP_PROP_FRAME_COUNT) or 0)
+            cap.release()
+            stride = max(1, n_total // max(1, int(max_frames))) if n_total else 3
+            capture(str(source), ws / "images", CaptureConfig(every_nth=stride, max_frames=int(max_frames),
+                                                               max_side=1280, min_blur=0.0, keep_sharpest_ratio=0.9))
+            report("recovering camera poses (COLMAP)", 0.15)
+            scene = run_sfm(ws, matcher="sequential")  # consecutive frames overlap
+        else:
+            report("preparing photos", 0.05)
+            capture(str(src_dir), ws / "images", CaptureConfig(max_side=1280, min_blur=0.0))
+            report("recovering camera poses (COLMAP)", 0.15)
+            scene = run_sfm(ws, matcher="exhaustive")  # unordered photos: match every pair
         masks = None
         if object_only:
             from ..masks import compute_masks
@@ -176,7 +206,8 @@ async def create_multiview_job(
         shutil.copy(ws / "output" / "point_cloud.ply", ws / "splat.ply")
         return {"files": {"splat": "splat.ply"},
                 "meta": {"gaussians": len(out), "cameras": len(scene), "points": len(scene.points_xyz),
-                         "photos": len(images), "object_only": bool(masks)}}
+                         "photos": len(images) if not is_video else len(list((ws / "images").glob("*.jpg"))),
+                         "video": is_video, "object_only": bool(masks)}}
 
     store.submit(job, run)
     return JSONResponse(job.to_dict(), status_code=202)

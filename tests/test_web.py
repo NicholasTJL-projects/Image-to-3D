@@ -84,3 +84,36 @@ def test_multiview_endpoint_without_colmap(client, monkeypatch):
     assert client.get("/api/health").json()["multiview"] is False
     monkeypatch.setattr(server, "ENABLE_MULTIVIEW", "1")
     assert client.post("/api/jobs/multiview", files=files[:2]).status_code == 400
+
+
+def _tiny_video(tmp_path):
+    import cv2
+
+    path = tmp_path / "clip.mp4"
+    vw = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10, (64, 48))
+    for i in range(12):
+        frame = np.zeros((48, 64, 3), np.uint8)
+        frame[:, :] = (i * 10, 100, 200)
+        vw.write(frame)
+    vw.release()
+    return path.read_bytes()
+
+
+def test_multiview_video_path(client, monkeypatch, tmp_path):
+    from image_to_3d.web import server
+
+    monkeypatch.setattr(server, "ENABLE_MULTIVIEW", "1")
+    assert client.post("/api/jobs/multiview", data={"iterations": "10"}).status_code == 400  # nothing uploaded
+
+    def boom(*a, **k):
+        raise RuntimeError("colmap stubbed out for the test")
+
+    monkeypatch.setattr(server, "run_sfm", boom, raising=False)
+    import image_to_3d.colmap as colmap_mod
+    monkeypatch.setattr(colmap_mod, "run_sfm", boom)
+    r = client.post("/api/jobs/multiview", files={"video": ("clip.mp4", _tiny_video(tmp_path), "video/mp4")},
+                    data={"iterations": "10", "object_only": "false"})
+    assert r.status_code == 202, r.text
+    assert r.json()["options"]["video"] is True
+    job = wait_done(client, r.json()["id"])
+    assert job["status"] == "error" and "colmap stubbed" in job["error"]

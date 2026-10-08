@@ -53,21 +53,97 @@ fetch('./api/health').then((r) => r.json()).then((h) => {
   if (h.multiview) $('multiview').hidden = false;
 }).catch(() => {});
 
-// ----------------------------------------------------------------- multi-view (photos from many angles)
-const mvFiles = $('mv-files'), mvGo = $('mv-go');
+// ----------------------------------------------------------------- multi-view: camera / video / photos
+const mvFiles = $('mv-files'), mvVideo = $('mv-video-file'), mvGo = $('mv-go');
+let mvMode = 'camera';
+let camShots = [];          // Blobs captured from the device camera
+let camStream = null, camTimer = null;
+
+function mvSource() {
+  if (mvMode === 'camera') return { photos: camShots };
+  if (mvMode === 'video') return { video: mvVideo.files[0] || null };
+  return { photos: [...mvFiles.files] };
+}
+function mvRefresh() {
+  const src = mvSource();
+  mvGo.disabled = src.video ? false : (src.photos || []).length < 3;
+}
+document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
+  mvMode = b.dataset.mode;
+  document.querySelectorAll('.seg-btn').forEach((x) => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.mv-mode').forEach((el) => { el.hidden = el.id !== `mv-${mvMode}`; });
+  if (mvMode !== 'camera') stopCamera();
+  mvRefresh();
+}));
 mvFiles.addEventListener('change', () => {
   const n = mvFiles.files.length;
   $('mv-label').textContent = n ? `${n} photo${n === 1 ? '' : 's'} selected` : 'Choose photos';
-  mvGo.disabled = n < 3;
+  mvRefresh();
 });
+mvVideo.addEventListener('change', () => {
+  const f = mvVideo.files[0];
+  $('mv-video-label').textContent = f ? `${f.name} (${(f.size / 1048576).toFixed(1)} MB)` : 'Choose a video';
+  mvRefresh();
+});
+
+// guided capture: full-resolution stills from the camera stream, one every 600 ms
+const camPreview = $('cam-preview'), camCanvas = $('cam-canvas');
+async function startCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 2560 } }, audio: false,
+    });
+  } catch (err) {
+    showError(`Camera unavailable: ${err.message || err}. Use the Video or Photos option instead.`);
+    return;
+  }
+  camPreview.srcObject = camStream;
+  camPreview.hidden = false;
+  await camPreview.play().catch(() => {});
+  $('cam-start').textContent = 'Stop camera';
+  $('cam-shoot').disabled = false;
+  $('cam-hint').textContent = 'Press Start capturing, then walk slowly around the object.';
+}
+function stopCamera() {
+  stopShooting();
+  if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; }
+  camPreview.srcObject = null; camPreview.hidden = true;
+  $('cam-start').textContent = 'Start camera';
+  $('cam-shoot').disabled = true;
+}
+function grabShot() {
+  const w = camPreview.videoWidth, h = camPreview.videoHeight;
+  if (!w || !h) return;
+  camCanvas.width = w; camCanvas.height = h;
+  camCanvas.getContext('2d').drawImage(camPreview, 0, 0, w, h);
+  camCanvas.toBlob((blob) => {
+    if (!blob) return;
+    camShots.push(blob);
+    $('cam-count').textContent = `${camShots.length} shot${camShots.length === 1 ? '' : 's'}`;
+    $('cam-hint').textContent = camShots.length < 40 ? 'Keep going: aim for 40 to 80 shots covering every side.'
+      : camShots.length < 80 ? 'Good coverage. A second loop higher or lower helps the top and sides.' : 'Plenty. Press Stop capturing.';
+    const wrap = document.querySelector('.cam-wrap'); wrap.classList.remove('flash'); void wrap.offsetWidth; wrap.classList.add('flash');
+    $('cam-reset').disabled = false;
+    mvRefresh();
+  }, 'image/jpeg', 0.92);
+}
+function startShooting() { if (camTimer) return; camTimer = setInterval(grabShot, 600); $('cam-shoot').textContent = 'Stop capturing'; }
+function stopShooting() { if (camTimer) { clearInterval(camTimer); camTimer = null; } $('cam-shoot').textContent = 'Start capturing'; }
+$('cam-start').addEventListener('click', () => (camStream ? stopCamera() : startCamera()));
+$('cam-shoot').addEventListener('click', () => (camTimer ? stopShooting() : startShooting()));
+$('cam-reset').addEventListener('click', () => { camShots = []; $('cam-count').textContent = '0 shots'; $('cam-reset').disabled = true; mvRefresh(); });
+
 mvGo.addEventListener('click', async () => {
   hideError();
+  stopShooting();
   resultEl.hidden = true;
   progress.hidden = false;
-  setProgress(0.02, 'uploading photos');
+  setProgress(0.02, 'uploading');
   mvGo.disabled = true;
+  const src = mvSource();
   const fd = new FormData();
-  for (const f of mvFiles.files) fd.append('images', f, f.name);
+  if (src.video) fd.append('video', src.video, src.video.name);
+  else src.photos.forEach((f, i) => fd.append('images', f, f.name || `shot_${String(i).padStart(4, '0')}.jpg`));
   fd.append('object_only', $('mv-object-only').checked);
   try {
     const res = await fetch('./api/jobs/multiview', { method: 'POST', body: fd });
@@ -77,7 +153,7 @@ mvGo.addEventListener('click', async () => {
   } catch (err) {
     showError(`Upload failed: ${err.message}`);
     progress.hidden = true;
-    mvGo.disabled = false;
+    mvRefresh();
   }
 });
 
@@ -138,7 +214,7 @@ function onDone(job) {
   setProgress(1, 'done');
   setTimeout(() => { progress.hidden = true; }, 600);
   goBtn.disabled = !selectedFile;
-  mvGo.disabled = mvFiles.files.length < 3;
+  mvRefresh();
   const m = job.meta || {};
   if (job.kind === 'multiview') {
     $('st-verts').textContent = fmt(m.cameras);
@@ -278,4 +354,4 @@ document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click',
 }));
 
 // debugging hook (used by the headless browser test)
-window.imageTo3D = { get splatViewer() { return splatViewer; }, get job() { return currentJob; }, get activeView() { return activeView; } };
+window.imageTo3D = { get splatViewer() { return splatViewer; }, get job() { return currentJob; }, get activeView() { return activeView; }, get camShots() { return camShots.length; } };

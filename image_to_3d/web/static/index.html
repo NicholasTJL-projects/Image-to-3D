@@ -79,17 +79,52 @@
       </div>
 
       <section id="multiview" class="multiview" hidden>
-        <h2>Full 3D from many photos</h2>
-        <p>Photograph one object from all sides (20 to 200 photos, about 70 % overlap) and get a Gaussian Splatting scene. Takes several minutes.</p>
+        <h2>Full 3D from many angles</h2>
+        <p>Walk around one object and get a Gaussian Splatting scene. Takes a few minutes.</p>
+        <div class="seg" role="tablist" aria-label="Capture source">
+          <button type="button" class="seg-btn active" data-mode="camera" role="tab">Camera</button>
+          <button type="button" class="seg-btn" data-mode="video" role="tab">Video</button>
+          <button type="button" class="seg-btn" data-mode="photos" role="tab">Photos</button>
+        </div>
+
+        <div id="mv-camera" class="mv-mode">
+          <div class="cam-wrap">
+            <video id="cam-preview" playsinline muted autoplay hidden></video>
+            <canvas id="cam-canvas" hidden></canvas>
+            <div id="cam-overlay" class="cam-overlay">
+              <strong id="cam-count">0 shots</strong>
+              <span id="cam-hint">Point at the object, press Start, then walk slowly around it.</span>
+            </div>
+          </div>
+          <div class="cam-controls">
+            <button type="button" id="cam-start" class="btn ghost">Start camera</button>
+            <button type="button" id="cam-shoot" class="btn ghost" disabled>Start capturing</button>
+            <button type="button" id="cam-reset" class="btn ghost" disabled>Clear</button>
+          </div>
+          <p class="hint">One still every half second at full camera resolution. 40 to 80 shots in two loops at different heights works well.</p>
+        </div>
+
+        <div id="mv-video" class="mv-mode" hidden>
+          <label class="btn ghost file-btn">
+            <input id="mv-video-file" type="file" accept="video/*" hidden>
+            <span id="mv-video-label">Choose a video</span>
+          </label>
+          <p class="hint">10 to 30 seconds, 4K if possible, slow and steady, exposure locked. The sharpest frames are picked automatically.</p>
+        </div>
+
+        <div id="mv-photos" class="mv-mode" hidden>
+          <label class="btn ghost file-btn">
+            <input id="mv-files" type="file" accept="image/*" multiple hidden>
+            <span id="mv-label">Choose photos</span>
+          </label>
+          <p class="hint">20 to 200 photos, about 70 % overlap between neighbours, every side covered.</p>
+        </div>
+
         <label class="row">
           <span>Object only (remove background)</span>
           <input type="checkbox" id="mv-object-only" checked>
         </label>
-        <label class="btn ghost file-btn">
-          <input id="mv-files" type="file" accept="image/*" multiple hidden>
-          <span id="mv-label">Choose photos</span>
-        </label>
-        <button id="mv-go" type="button" disabled>Reconstruct from photos</button>
+        <button id="mv-go" type="button" disabled>Reconstruct in 3D</button>
       </section>
 
       <details class="about">
