@@ -267,7 +267,7 @@ class Trainer:
 
         opac = torch.sigmoid(p["logit_opacity"].detach()).reshape(-1)
         prune = opac < c.prune_opacity
-        if self.step > c.opacity_reset_interval:
+        if c.opacity_reset_interval and self.step > c.opacity_reset_interval:  # size pruning only after the first reset
             big_world = max_scale > 0.1 * self.scene_radius
             big_screen = self.max_radii > 0.2 * max(cam_w, cam_h)
             prune = prune | big_world | big_screen
