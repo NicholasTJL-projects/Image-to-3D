@@ -240,7 +240,12 @@ async function loadSplat(url) {
   splatLoadedFor = url;
   try {
     splatModule = splatModule || await import('./vendor/gaussian-splats-3d.module.js');
-    if (splatViewer) { await splatViewer.dispose(); splatViewer = null; $('splat-view').innerHTML = ''; }
+    if (splatViewer) {
+      const v = splatViewer; splatViewer = null;
+      try { v.stop?.(); } catch (e) { /* not started */ }
+      try { await v.dispose(); } catch (e) { /* the library throws if its canvas was already detached */ }
+      $('splat-view').replaceChildren();
+    }
     splatViewer = new splatModule.Viewer({
       rootElement: $('splat-view'),
       cameraUp: [0, 1, 0],
