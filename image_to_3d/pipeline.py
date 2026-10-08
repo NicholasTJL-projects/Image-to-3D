@@ -73,31 +73,49 @@ def init_gaussians(scene: Scene, workspace: str | Path, *, initial_opacity: floa
 
 def orbit_cameras(scene: Scene, n: int = 60, *, elevation_deg: float = 10.0, width: int | None = None,
                   height: int | None = None):
-    """Cameras on a circle through the training rig, for turntable renders."""
+    """Cameras on a circle around the scene, for turntable renders.
+
+    The orbit centre is the median of the sparse points (robust to outliers) or, without points,
+    the point closest to all camera viewing rays. The radius is the median camera distance to it
+    and "up" is the average camera up vector, so the orbit sits where the real cameras were.
+    """
     from .camera import Camera
 
     ref = scene.cameras[0]
     width = width or ref.width
     height = height or ref.height
     focal = ref.fx * width / ref.width
-    centre = scene.centroid
-    # average viewing target: where the cameras look, ~ scene radius ahead of the rig centroid
-    fwd = np.mean([c.forward for c in scene.cameras], axis=0)
-    target = centre + fwd * scene.radius if np.linalg.norm(fwd) > 1e-3 else centre
-    up = -np.mean([c.R.T @ np.array([0, 1.0, 0]) for c in scene.cameras], axis=0)
+    centers = np.stack([c.center for c in scene.cameras])
+    fwds = np.stack([c.forward for c in scene.cameras])
+
+    if len(scene.points_xyz) >= 10:
+        target = np.median(scene.points_xyz, axis=0)
+    else:  # least-squares intersection of the viewing rays
+        A = np.zeros((3, 3))
+        b = np.zeros(3)
+        for c0, d in zip(centers, fwds):
+            P = np.eye(3) - np.outer(d, d)
+            A += P
+            b += P @ c0
+        target = np.linalg.lstsq(A, b, rcond=None)[0] if np.linalg.matrix_rank(A) == 3 else centers.mean(0)
+
+    up = -np.mean([c.R.T @ np.array([0.0, 1.0, 0.0]) for c in scene.cameras], axis=0)  # image rows grow down
+    if np.linalg.norm(up) < 1e-6:
+        up = np.array([0.0, -1.0, 0.0])
     up /= np.linalg.norm(up)
-    radius = np.linalg.norm(centre - target) or scene.radius
-    # orthonormal basis in the plane perpendicular to `up`
-    a = centre - target
+    radius = float(np.median(np.linalg.norm(centers - target, axis=1)))
+
+    # orthonormal basis in the plane perpendicular to `up`, starting at the first camera's azimuth
+    a = centers[0] - target
     a -= up * (a @ up)
     if np.linalg.norm(a) < 1e-6:
-        a = np.cross(up, [1.0, 0, 0])
+        a = np.cross(up, [1.0, 0.0, 0.0])
     a /= np.linalg.norm(a)
-    b = np.cross(up, a)
+    bvec = np.cross(up, a)
     cams = []
     el = np.deg2rad(elevation_deg)
     for i in range(n):
         ang = 2 * np.pi * i / n
-        eye = target + radius * (np.cos(el) * (np.cos(ang) * a + np.sin(ang) * b) + np.sin(el) * up)
-        cams.append(Camera.look_at(eye, target, up=-up, width=width, height=height, focal=focal, name=f"orbit_{i:04d}"))
+        eye = target + radius * (np.cos(el) * (np.cos(ang) * a + np.sin(ang) * bvec) + np.sin(el) * up)
+        cams.append(Camera.look_at(eye, target, up=up, width=width, height=height, focal=focal, name=f"orbit_{i:04d}"))
     return cams

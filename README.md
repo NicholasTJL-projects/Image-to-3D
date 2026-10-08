@@ -86,6 +86,16 @@ It includes a NumPy reference rasteriser, a differentiable pure-PyTorch rasteris
 
 Capture tips: keep the subject and lighting fixed, move the camera rather than the object, overlap neighbouring photos by about 70 %, cover the top and all sides, and avoid glass, mirrors and plain walls.
 
+Result of that pipeline on the synthetic 36-photo set below, trained for 600 iterations at quarter
+resolution on 4 CPU cores (13 minutes): source photo on the left, Gaussian Splatting render of the same
+camera on the right. Longer training, full resolution and a GPU rasteriser sharpen it considerably.
+
+![Multi-view reconstruction: photo vs splat render](docs/multiview.png)
+
+Novel views from the `render --views orbit` turntable of the same scene:
+
+![Orbit renders of the reconstructed scene](docs/multiview-orbit.png)
+
 ### Testing the multi-view pipeline without real photos
 
 `scripts/make_synthetic_photoset.py` renders a textured scene from 36 camera positions with

@@ -100,7 +100,7 @@ def cmd_render(args):
     frames = []
     for i, cam in enumerate(cams):
         img = renderer(cam)
-        _write_image(out_dir / f"{cam.name or f'view_{i:04d}'}.png", img)
+        _write_image(out_dir / f"{Path(cam.name).stem if cam.name else f'view_{i:04d}'}.png", img)
         frames.append(img)
     if args.video:
         vp = out_dir.with_suffix(".mp4")

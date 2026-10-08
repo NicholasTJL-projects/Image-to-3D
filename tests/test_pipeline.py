@@ -36,6 +36,24 @@ def test_orbit_cameras_look_at_scene(tmp_path):
         assert z[0] > 0 and 0 <= uv[0, 0] <= c.width and 0 <= uv[0, 1] <= c.height
 
 
+def test_orbit_cameras_target_point_cloud_not_ray_overshoot():
+    # downward-looking ring (like a hand-held capture): the orbit must aim at the points, not below them
+    from image_to_3d.synthetic import ring_cameras
+
+    cams = ring_cameras(12, radius=3.0, height=2.0, target=(0.0, -0.5, 0.0))
+    pts = np.random.default_rng(0).normal(scale=0.3, size=(200, 3)) + np.array([0.0, -0.5, 0.0])
+    scene = Scene(cams, pts, np.zeros((200, 3), np.uint8))
+    for c in pipeline.orbit_cameras(scene, 6):
+        uv, z = c.project(np.array([[0.0, -0.5, 0.0]]))
+        assert z[0] > 0
+        assert abs(uv[0, 0] - c.width / 2) < 1 and abs(uv[0, 1] - c.height / 2) < 1
+        assert abs(np.linalg.norm(c.center - np.array([0.0, -0.5, 0.0])) - np.linalg.norm(cams[0].center - np.array([0.0, -0.5, 0.0]))) < 0.3
+        # same orientation as the real cameras: camera "up" (-Y axis in world) points the same way
+        real_up = -cams[0].R.T @ np.array([0.0, 1.0, 0.0])
+        orbit_up = -c.R.T @ np.array([0.0, 1.0, 0.0])
+        assert real_up @ orbit_up > 0.7  # same hemisphere; the orbit pitches less than the steep real cameras
+
+
 def test_cli_init_info_export_render(tmp_path, capsys):
     from image_to_3d.colmap_io import write_model_txt
 
