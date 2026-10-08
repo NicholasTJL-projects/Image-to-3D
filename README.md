@@ -91,6 +91,12 @@ silhouette in two or more views. Without it, a plain background has no texture t
 becomes floating blobs. COLMAP still needs features to pose the cameras, so a patterned surface
 under the object helps even in object-only mode.
 
+A real test: 14 phone photos of a biscuit on a white napkin. Without object-only mode the napkin
+became white floaters (27 dB held-out PSNR); with it, only the biscuit remains (35 dB). The capture
+covered 114° of the circle, so the far side is thin, which the coverage check reports to the user.
+
+![Object-only cookie: photos vs renders, and orbit views](docs/cookie-object-only.png)
+
 The same pipeline runs from the CLI:
 
 ```bash

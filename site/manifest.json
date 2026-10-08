@@ -37,14 +37,13 @@
   "id": "cookie14",
   "label": "Cookie \u00b7 14 photos",
   "kind": "multiview",
-  "blurb": "Your 14 photos: COLMAP posed 11 of them, then 700 iterations of Gaussian Splatting on CPU with densification. A real 3D object, not a relief. Splat only.",
-  "splat": "assets/cookie14/splat.ply",
+  "blurb": "Your 14 photos in object-only mode: the napkin is masked out and Gaussians outside the silhouette are pruned, so only the biscuit remains. Coverage poor: 11 of 14 views posed, 114\u00b0 around the object, so the far side is thin.",
   "input": "assets/cookie14/input.jpg",
   "stats": {
    "cameras": 11,
    "points": 2537,
-   "gaussians": 30617,
-   "psnr": 27.1
+   "gaussians": 24242,
+   "psnr": 35.4
   },
   "camera": {
    "position": [
@@ -62,7 +61,8 @@
     -0.9436,
     -0.2444
    ]
-  }
+  },
+  "splat": "assets/cookie14/splat.ply"
  },
  {
   "id": "chelsea",
