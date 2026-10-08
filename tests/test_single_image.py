@@ -117,3 +117,24 @@ def test_midas_small_if_weights_cached():
         pytest.skip("MiDaS weights not cached")
     inv = d.estimate_depth(disc_image(), "midas_small")
     assert inv.shape == (96, 128) and 0 <= inv.min() and inv.max() <= 1
+
+
+def test_depth_anything_if_cached():
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    from image_to_3d import depth as d
+
+    try:
+        d.depth_anything_dir(download=False)
+    except FileNotFoundError:
+        pytest.skip("Depth Anything weights not cached")
+    # a flat synthetic disc is not a realistic input for a learned model, so only check the contract
+    inv = d.estimate_depth(disc_image(), "depth_anything")
+    assert inv.shape == (96, 128) and inv.dtype == np.float32
+    assert 0 <= inv.min() and inv.max() <= 1 and np.isfinite(inv).all()
+
+
+def test_default_backend_is_known():
+    from image_to_3d import depth as d
+
+    assert d.default_backend() in d.BACKENDS

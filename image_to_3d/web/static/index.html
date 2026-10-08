@@ -78,15 +78,25 @@
         </div>
       </div>
 
+      <section id="multiview" class="multiview" hidden>
+        <h2>Full 3D from many photos</h2>
+        <p>Photograph one object from all sides (20 to 200 photos, about 70 % overlap) and get a Gaussian Splatting scene. Takes several minutes.</p>
+        <label class="btn ghost file-btn">
+          <input id="mv-files" type="file" accept="image/*" multiple hidden>
+          <span id="mv-label">Choose photos</span>
+        </label>
+        <button id="mv-go" type="button" disabled>Reconstruct from photos</button>
+      </section>
+
       <details class="about">
         <summary>How it works</summary>
         <ol>
           <li>The subject is cut out with a U²-Net segmentation model (falls back to GrabCut).</li>
-          <li>A monocular depth network (MiDaS v2.1 small) predicts relative depth for every pixel.</li>
+          <li>A monocular depth network (Depth Anything V2, or MiDaS v2.1 as a fallback) predicts relative depth for every pixel.</li>
           <li>Pixels are back-projected through a pinhole camera, meshed, textured with the photo and mirrored to close the back.</li>
           <li>The same points are written as 3D Gaussians, so the result also opens in splat viewers.</li>
         </ol>
-        <p>One photo cannot see the hidden sides of an object, so the output is a relief ("2.5D") model. The <a href="https://github.com/NicholasTJL-projects/Image-to-3D#multi-view-capture" target="_blank" rel="noopener">multi-view pipeline</a> in the same repo reconstructs full scenes from a video with Gaussian Splatting.</p>
+        <p>One photo cannot see the hidden sides of an object, so the output is a relief ("2.5D") model. For a full 3D capture, the <a href="https://github.com/NicholasTJL-projects/Image-to-3D#multi-view-capture" target="_blank" rel="noopener">multi-view pipeline</a> in the same repo turns photos taken from many angles into a Gaussian Splatting scene.</p>
       </details>
     </section>
 
@@ -112,7 +122,7 @@
   </main>
 
   <footer class="foot">
-    <span>© Kunami Labs · MIT licensed · built with MiDaS, U²-Net, Three.js and GaussianSplats3D</span>
+    <span>© Kunami Labs · MIT licensed · built with Depth Anything V2, MiDaS, U²-Net, Three.js and GaussianSplats3D</span>
   </footer>
 
   <script type="module" src="./app.js"></script>

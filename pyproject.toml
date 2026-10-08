@@ -24,11 +24,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-depth = ["torch>=2.1", "timm>=0.9"]                 # MiDaS monocular depth
+depth = ["torch>=2.1", "timm>=0.9", "transformers>=4.40", "safetensors>=0.4"]  # Depth Anything V2 + MiDaS
 segment = ["rembg>=2.0", "onnxruntime>=1.16"]       # U^2-Net background removal
 train = ["torch>=2.1"]                              # multi-view Gaussian Splatting trainer
 gsplat = ["torch>=2.1", "gsplat>=1.0"]
-web = ["torch>=2.1", "timm>=0.9", "rembg>=2.0", "onnxruntime>=1.16"]
+web = ["torch>=2.1", "timm>=0.9", "transformers>=4.40", "safetensors>=0.4", "rembg>=2.0", "onnxruntime>=1.16"]
 dev = ["pytest>=7.0", "httpx>=0.25"]
 
 [project.scripts]

@@ -35,13 +35,13 @@ from .gaussians import GaussianCloud, inverse_sigmoid, rgb_to_sh
 
 @dataclass
 class SingleImageConfig:
-    depth_backend: str = "midas_small"   # midas_small | depth_anything | inflate
+    depth_backend: str = "auto"          # auto | depth_anything | midas_small | inflate
     remove_background: bool = True
     segmenter: str = "auto"              # auto | rembg | grabcut | none
     max_side: int = 512                  # working resolution for depth / mesh grid
     fov_deg: float = 50.0                # assumed horizontal field of view of the photo
     relief: float = 0.35                 # depth range as a fraction of the object's width
-    edge_threshold: float = 0.08         # cut triangles whose depth jump exceeds this * depth range
+    edge_threshold: float = 0.25         # cut triangles whose depth jump exceeds this * depth range (only real cliffs)
     mirror_back: bool = True             # mirror the relief to close the back of a cut-out object
     smooth_depth: int = 3                # bilateral smoothing passes on the depth map (0 = off)
     splat_stride: int = 1                # keep every n-th pixel as a Gaussian
@@ -352,17 +352,28 @@ def reconstruct(image, cfg: SingleImageConfig | None = None, *, progress: Callab
 
     report("estimating depth", 0.35)
     t = time.time()
-    backend = cfg.depth_backend
+    backend = depth_mod.default_backend() if cfg.depth_backend == "auto" else cfg.depth_backend
     if not depth_mod.backend_available(backend):
-        backend = "inflate"
+        backend = depth_mod.default_backend()
     try:
         inv = depth_mod.estimate_depth(rgb, backend, mask=mask, device=cfg.device)
-    except Exception as e:  # no weights / no network: still produce something
-        print(f"depth backend {backend} failed ({e}); using inflate", flush=True)
-        backend = "inflate"
-        inv = depth_mod.estimate_depth(rgb, "inflate", mask=mask)
-    if backend != "inflate" and cfg.remove_background:
-        # push cut-out edges back a little so silhouettes don't flare towards the viewer
+    except Exception as e:  # no weights / no network: fall back down the list, then inflate
+        print(f"depth backend {backend} failed ({e})", flush=True)
+        inv = None
+        for alt in depth_mod.BACKENDS[depth_mod.BACKENDS.index(backend) + 1:]:
+            if not depth_mod.backend_available(alt):
+                continue
+            try:
+                inv = depth_mod.estimate_depth(rgb, alt, mask=mask, device=cfg.device)
+                backend = alt
+                break
+            except Exception as e2:
+                print(f"depth backend {alt} failed ({e2})", flush=True)
+        if inv is None:
+            backend = "inflate"
+            inv = depth_mod.estimate_depth(rgb, "inflate", mask=mask)
+    if backend == "midas_small" and cfg.remove_background:
+        # MiDaS small blurs silhouettes; push cut-out edges back so they don't flare towards the viewer
         inv = np.minimum(inv, 0.35 + 0.65 * depth_mod.depth_inflate(rgb, mask) ** 0.5)
     for _ in range(cfg.smooth_depth):
         inv = cv2.bilateralFilter(inv.astype(np.float32), 7, 0.08, 5)

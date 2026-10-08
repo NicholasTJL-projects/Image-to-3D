@@ -23,6 +23,7 @@ SOFTWARE.
 ---
 
 Third-party components:
+- Depth Anything V2 small weights (fetched at runtime/build): Apache License 2.0, (c) Depth Anything authors
 - MiDaS network definition in image_to_3d/depth.py: MIT License, (c) 2019 Intel ISL
 - Three.js (image_to_3d/web/static/vendor): MIT License, see vendor/LICENSE.three
 - GaussianSplats3D (image_to_3d/web/static/vendor): MIT License, see vendor/LICENSE.gaussian-splats-3d

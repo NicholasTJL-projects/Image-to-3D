@@ -73,3 +73,14 @@ def test_bad_requests(client):
     r = client.post("/api/jobs", files={"image": ("x.png", b"not an image", "image/png")}, data={"depth_backend": "inflate"})
     job = wait_done(client, r.json()["id"])
     assert job["status"] == "error" and job["error"]
+
+
+def test_multiview_endpoint_without_colmap(client, monkeypatch):
+    from image_to_3d.web import server
+
+    monkeypatch.setattr(server, "ENABLE_MULTIVIEW", "0")
+    files = [("images", (f"p{i}.png", png_bytes(), "image/png")) for i in range(3)]
+    assert client.post("/api/jobs/multiview", files=files).status_code == 501
+    assert client.get("/api/health").json()["multiview"] is False
+    monkeypatch.setattr(server, "ENABLE_MULTIVIEW", "1")
+    assert client.post("/api/jobs/multiview", files=files[:2]).status_code == 400

@@ -22,7 +22,7 @@ RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install ".[web]"
 
 # Fetch model weights at build time so the first request is fast and the container runs offline.
-RUN python -c "from image_to_3d.depth import midas_weights_path; midas_weights_path()" \
+RUN python -c "from image_to_3d.depth import depth_anything_dir, midas_weights_path; depth_anything_dir(); midas_weights_path()" \
     && python -c "from rembg import new_session; new_session('u2net')"
 
 VOLUME ["/data"]

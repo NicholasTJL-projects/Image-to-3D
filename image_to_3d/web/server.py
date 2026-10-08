@@ -7,7 +7,7 @@ Endpoints
 GET  /                         the single-page frontend
 GET  /api/health               which backends are available on this server
 POST /api/jobs                 multipart upload: ``image`` (+ options) -> job
-POST /api/jobs/multiview       multipart upload: ``video`` or several ``images`` -> job (needs COLMAP)
+POST /api/jobs/multiview       multipart upload: many ``images`` of one object -> splat (needs COLMAP)
 GET  /api/jobs/{id}            job status / progress / result file list
 GET  /api/jobs/{id}/files/{n}  result files (model.glb, splat.ply, depth.png, ...)
 """
@@ -61,7 +61,7 @@ def health() -> dict:
     return {
         "ok": True,
         "depth_backends": [b for b in depth_mod.BACKENDS if depth_mod.backend_available(b)],
-        "default_depth_backend": "midas_small" if depth_mod.backend_available("midas_small") else "inflate",
+        "default_depth_backend": depth_mod.default_backend(),
         "segmenters": [s for s in ("rembg", "grabcut") if segmenter_available(s)],
         "multiview": multiview_enabled(),
         "torch": torch_ok,
@@ -92,7 +92,7 @@ async def create_job(
 ) -> JSONResponse:
     data = await _read_upload(image)
     if depth_backend == "auto":
-        depth_backend = "midas_small" if depth_mod.backend_available("midas_small") else "inflate"
+        depth_backend = depth_mod.default_backend()
     if depth_backend not in depth_mod.BACKENDS:
         raise HTTPException(400, f"unknown depth backend {depth_backend}")
     cfg = SingleImageConfig(
@@ -119,27 +119,24 @@ async def create_job(
 
 @app.post("/api/jobs/multiview")
 async def create_multiview_job(
-    video: UploadFile | None = File(None),
-    images: list[UploadFile] = File([]),
+    images: list[UploadFile] = File(...),
     iterations: int = Form(3000),
     downscale: int = Form(4),
 ) -> JSONResponse:
+    """Photos of one object from many angles -> camera poses (COLMAP) -> Gaussian Splatting scene."""
     if not multiview_enabled():
         raise HTTPException(501, "multi-view reconstruction needs COLMAP and PyTorch on the server")
-    if video is None and not images:
-        raise HTTPException(400, "upload a video or several images")
-    job = store.create("multiview", options={"iterations": iterations, "downscale": downscale})
+    if len(images) < 3:
+        raise HTTPException(400, "upload at least 3 photos taken from different angles (20+ recommended)")
+    if len(images) > 300:
+        raise HTTPException(400, "at most 300 photos per job")
+    job = store.create("multiview", options={"iterations": iterations, "downscale": downscale, "photos": len(images)})
     ws = store.dir(job.id)
     src_dir = ws / "upload"
     src_dir.mkdir(exist_ok=True)
-    source: Path
-    if video is not None:
-        source = src_dir / ("video" + Path(video.filename or "v.mp4").suffix.lower()[:8])
-        source.write_bytes(await _read_upload(video))
-    else:
-        for i, up in enumerate(images):
-            (src_dir / f"img_{i:04d}{Path(up.filename or '.jpg').suffix.lower()[:8]}").write_bytes(await _read_upload(up))
-        source = src_dir
+    for i, up in enumerate(images):
+        suffix = Path(up.filename or ".jpg").suffix.lower()[:8] or ".jpg"
+        (src_dir / f"img_{i:04d}{suffix}").write_bytes(await _read_upload(up))
 
     def run(job: Job, report) -> dict:
         from ..capture import CaptureConfig, capture
@@ -147,18 +144,30 @@ async def create_multiview_job(
         from ..pipeline import init_gaussians
         from ..train import TrainConfig, train
 
-        report("extracting frames", 0.05)
-        capture(str(source), ws / "images", CaptureConfig(every_nth=3, max_frames=200, max_side=1280, min_blur=40))
-        report("structure from motion (COLMAP)", 0.15)
-        scene = run_sfm(ws)
+        report("preparing photos", 0.05)
+        capture(str(src_dir), ws / "images", CaptureConfig(max_side=1280, min_blur=0.0))
+        report("recovering camera poses (COLMAP)", 0.15)
+        scene = run_sfm(ws, matcher="exhaustive")  # unordered photos: match every pair
         report("initialising gaussians", 0.4)
         cloud = init_gaussians(scene, ws)
-        report(f"training ({iterations} iterations)", 0.45)
-        cfg = TrainConfig(iterations=int(iterations), downscale=int(downscale), log_every=500, eval_every=0)
-        out = train(scene, cloud, cfg, out_dir=ws / "output", log=lambda msg: report(msg, 0.5))
+        total = int(iterations)
+
+        def log(msg: str) -> None:
+            if msg.startswith("[") and "/" in msg.split("]")[0]:
+                try:
+                    step = int(msg[1:].split("/")[0])
+                    report(f"training gaussians ({step}/{total})", 0.45 + 0.5 * step / total)
+                    return
+                except ValueError:
+                    pass
+            report(msg[:80], job.progress)
+
+        cfg = TrainConfig(iterations=total, downscale=int(downscale), log_every=100, eval_every=0)
+        out = train(scene, cloud, cfg, out_dir=ws / "output", log=log)
         shutil.copy(ws / "output" / "point_cloud.ply", ws / "splat.ply")
         return {"files": {"splat": "splat.ply"},
-                "meta": {"gaussians": len(out), "cameras": len(scene), "points": len(scene.points_xyz)}}
+                "meta": {"gaussians": len(out), "cameras": len(scene), "points": len(scene.points_xyz),
+                         "photos": len(images)}}
 
     store.submit(job, run)
     return JSONResponse(job.to_dict(), status_code=202)

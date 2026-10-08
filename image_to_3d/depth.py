@@ -8,8 +8,10 @@
                     MiDaS code (Intel ISL, https://github.com/isl-org/MiDaS) built on
                     timm's backbone, so no torch.hub access is needed. Weights are
                     downloaded once from the MiDaS GitHub release into the cache dir.
-* ``depth_anything`` Depth Anything V2 (small) through Hugging Face ``transformers``,
-                    if that package and hub access are available. Better quality.
+* ``depth_anything`` Depth Anything V2 small (DINOv2-S encoder, ~25M params) through the
+                    ``transformers`` model classes. Much sharper than MiDaS and the default
+                    when available. The weights (Apache-2.0) are fetched once from this
+                    repository's GitHub release so deployments never depend on the Hub.
 * ``inflate``       Model-free fallback: puffs the foreground mask like a pillow
                     (distance transform). Keeps the app working with no weights.
 """
@@ -28,7 +30,11 @@ MIDAS_SMALL_URL = "https://github.com/isl-org/MiDaS/releases/download/v2_1/midas
 MIDAS_SMALL_SHA256_PREFIX = None  # release asset is served by GitHub; size check only
 MIDAS_SMALL_SIZE = 85_761_505
 
-BACKENDS = ("midas_small", "depth_anything", "inflate")
+DEPTH_ANYTHING_RELEASE = os.environ.get(
+    "IMAGE_TO_3D_DA2_URL", "https://github.com/NicholasTJL-projects/Image-to-3D/releases/download/models-v1")
+DEPTH_ANYTHING_FILES = {"model.safetensors": 99_173_660, "config.json": None, "preprocessor_config.json": None}
+
+BACKENDS = ("depth_anything", "midas_small", "inflate")  # in order of preference
 
 
 def cache_dir() -> Path:
@@ -51,6 +57,26 @@ def midas_weights_path(download: bool = True) -> Path:
         raise RuntimeError("MiDaS weight download was truncated")
     tmp.replace(path)
     return path
+
+
+def depth_anything_dir(download: bool = True) -> Path:
+    """Local folder with the Depth Anything V2 small files, fetched from the GitHub release."""
+    d = cache_dir() / "depth_anything_v2_small"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, size in DEPTH_ANYTHING_FILES.items():
+        path = d / name
+        if path.exists() and (size is None or path.stat().st_size == size):
+            continue
+        if not download:
+            raise FileNotFoundError(path)
+        tmp = path.with_suffix(path.suffix + ".part")
+        print(f"downloading {name} -> {path}", flush=True)
+        urllib.request.urlretrieve(f"{DEPTH_ANYTHING_RELEASE}/{name}", tmp)
+        if size is not None and tmp.stat().st_size != size:
+            tmp.unlink(missing_ok=True)
+            raise RuntimeError(f"download of {name} was truncated")
+        tmp.replace(path)
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -180,24 +206,28 @@ def depth_midas_small(rgb: np.ndarray, device: str = "cpu") -> np.ndarray:
     return pred.cpu().numpy()
 
 
-def depth_depth_anything(rgb: np.ndarray, device: str = "cpu") -> np.ndarray:
-    from PIL import Image
-    from transformers import pipeline  # optional dependency, needs hub access for the weights
-
-    pipe = _depth_anything_pipe(device)
-    out = pipe(Image.fromarray(rgb))
-    pred = np.asarray(out["predicted_depth"], dtype=np.float32)
-    if pred.ndim == 3:
-        pred = pred[0]
-    return cv2.resize(pred, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_CUBIC)
-
-
 @lru_cache(maxsize=1)
-def _depth_anything_pipe(device: str):
-    from transformers import pipeline
+def load_depth_anything(device: str = "cpu"):
+    from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+    from transformers.utils import logging as hf_logging
 
-    return pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf",
-                    device=0 if device.startswith("cuda") else -1)
+    hf_logging.disable_progress_bar()
+    folder = str(depth_anything_dir())
+    processor = AutoImageProcessor.from_pretrained(folder)
+    model = AutoModelForDepthEstimation.from_pretrained(folder).to(device).eval()
+    return processor, model
+
+
+def depth_depth_anything(rgb: np.ndarray, device: str = "cpu") -> np.ndarray:
+    import torch
+
+    processor, model = load_depth_anything(device)
+    inputs = processor(images=rgb, return_tensors="pt").to(device)
+    with torch.no_grad():
+        pred = model(**inputs).predicted_depth  # (1, h, w) relative inverse depth
+        pred = torch.nn.functional.interpolate(pred[None], size=rgb.shape[:2], mode="bicubic",
+                                               align_corners=False)[0, 0]
+    return pred.cpu().numpy()
 
 
 def depth_inflate(rgb: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
@@ -235,6 +265,7 @@ def backend_available(name: str) -> bool:
         return True
     if name == "depth_anything":
         try:
+            import torch  # noqa: F401
             import transformers  # noqa: F401
         except ImportError:
             return False
@@ -242,9 +273,19 @@ def backend_available(name: str) -> bool:
     return False
 
 
-def estimate_depth(rgb: np.ndarray, backend: str = "midas_small", *, mask: np.ndarray | None = None,
+def default_backend() -> str:
+    """The best backend this installation can run."""
+    for name in BACKENDS:
+        if backend_available(name):
+            return name
+    return "inflate"
+
+
+def estimate_depth(rgb: np.ndarray, backend: str = "auto", *, mask: np.ndarray | None = None,
                    device: str = "cpu") -> np.ndarray:
     """Return relative inverse depth in [0,1] (1 = nearest) for an ``(H,W,3)`` uint8 RGB image."""
+    if backend == "auto":
+        backend = default_backend()
     if backend == "midas_small":
         inv = depth_midas_small(rgb, device)
     elif backend == "depth_anything":

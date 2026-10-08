@@ -87,3 +87,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .placeholder .small { font-size: 12px; opacity: .7; }
 
 .foot { padding: 14px 28px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; text-align: center; }
+
+.multiview { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.multiview h2 { margin: 0; font-size: 14px; }
+.multiview p { margin: 0; font-size: 13px; color: var(--muted); }
+.file-btn { display: block; cursor: pointer; }

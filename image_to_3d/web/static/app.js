@@ -43,14 +43,42 @@ function hideError() { errorEl.hidden = true; }
 fetch('./api/health').then((r) => r.json()).then((h) => {
   const sel = $('depth-backend');
   sel.innerHTML = '';
-  const names = { midas_small: 'MiDaS small (default)', depth_anything: 'Depth Anything V2', inflate: 'none (inflate silhouette)' };
+  const names = { depth_anything: 'Depth Anything V2 small', midas_small: 'MiDaS v2.1 small', inflate: 'none (inflate silhouette)' };
   for (const b of h.depth_backends) {
     const o = document.createElement('option');
     o.value = b; o.textContent = names[b] || b;
     if (b === h.default_depth_backend) o.selected = true;
     sel.appendChild(o);
   }
+  if (h.multiview) $('multiview').hidden = false;
 }).catch(() => {});
+
+// ----------------------------------------------------------------- multi-view (photos from many angles)
+const mvFiles = $('mv-files'), mvGo = $('mv-go');
+mvFiles.addEventListener('change', () => {
+  const n = mvFiles.files.length;
+  $('mv-label').textContent = n ? `${n} photo${n === 1 ? '' : 's'} selected` : 'Choose photos';
+  mvGo.disabled = n < 3;
+});
+mvGo.addEventListener('click', async () => {
+  hideError();
+  resultEl.hidden = true;
+  progress.hidden = false;
+  setProgress(0.02, 'uploading photos');
+  mvGo.disabled = true;
+  const fd = new FormData();
+  for (const f of mvFiles.files) fd.append('images', f, f.name);
+  try {
+    const res = await fetch('./api/jobs/multiview', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    currentJob = await res.json();
+    poll(currentJob.id);
+  } catch (err) {
+    showError(`Upload failed: ${err.message}`);
+    progress.hidden = true;
+    mvGo.disabled = false;
+  }
+});
 
 // ----------------------------------------------------------------- job flow
 form.addEventListener('submit', async (e) => {
@@ -108,8 +136,28 @@ function onDone(job) {
   currentJob = job;
   setProgress(1, 'done');
   setTimeout(() => { progress.hidden = true; }, 600);
-  goBtn.disabled = false;
+  goBtn.disabled = !selectedFile;
+  mvGo.disabled = mvFiles.files.length < 3;
   const m = job.meta || {};
+  if (job.kind === 'multiview') {
+    $('st-verts').textContent = fmt(m.cameras);
+    $('st-faces').textContent = fmt(m.points);
+    $('st-gauss').textContent = fmt(m.gaussians);
+    $('st-time').textContent = `${Math.round(job.elapsed || 0)} s`;
+    document.querySelector('.stats div:nth-child(1) dt').textContent = 'Cameras';
+    document.querySelector('.stats div:nth-child(2) dt').textContent = 'SfM points';
+    $('dl-glb').hidden = true;
+    $('dl-depth').hidden = true;
+    $('dl-ply').href = fileUrl(job, 'splat');
+    resultEl.hidden = false;
+    placeholder.style.display = 'none';
+    document.querySelector('.tab[data-view=splat]').click();
+    return;
+  }
+  document.querySelector('.stats div:nth-child(1) dt').textContent = 'Vertices';
+  document.querySelector('.stats div:nth-child(2) dt').textContent = 'Triangles';
+  $('dl-glb').hidden = false;
+  $('dl-depth').hidden = false;
   $('st-verts').textContent = fmt(m.vertices);
   $('st-faces').textContent = fmt(m.faces);
   $('st-gauss').textContent = fmt(m.gaussians);
