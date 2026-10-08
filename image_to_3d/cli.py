@@ -61,18 +61,26 @@ def cmd_train(args):
 
     ws = Path(args.workspace)
     scene = pipeline.load_scene(ws)
+    masks = None
+    if getattr(args, "object_only", False):
+        from .masks import compute_masks
+
+        print("object-only: segmenting the subject in every photo", flush=True)
+        masks = compute_masks(scene, ws / "masks")
     init_ply = Path(args.init) if args.init else ws / "output" / "init.ply"
-    if init_ply.exists():
+    if init_ply.exists() and not masks:
         cloud = GaussianCloud.load_ply(init_ply)
     else:
-        cloud = pipeline.init_gaussians(scene, ws, **_cfg_section(args, "init"))
+        cloud = pipeline.init_gaussians(scene, ws, masks=masks, **_cfg_section(args, "init"))
     cfg_d = _override(_cfg_section(args, "train"), args,
                       ["iterations", "device", "backend", "downscale", "background", "max_gaussians", "log_every",
                        "eval_every", "checkpoint_every", "seed"])
     if args.no_densify:
         cfg_d["densify"] = False
+    if masks:
+        cfg_d["object_only"] = True
     cfg = TrainConfig.from_dict(cfg_d)
-    out = train(scene, cloud, cfg, out_dir=ws / "output")
+    out = train(scene, cloud, cfg, out_dir=ws / "output", masks=masks)
     print(f"saved {len(out)} gaussians to {ws / 'output' / 'point_cloud.ply'}")
 
 
@@ -240,6 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--background", choices=["black", "white", "random"])
     s.add_argument("--max-gaussians", dest="max_gaussians", type=int)
     s.add_argument("--no-densify", dest="no_densify", action="store_true")
+    s.add_argument("--object-only", dest="object_only", action="store_true",
+                   help="segment the subject in each photo and reconstruct only it (no background)")
     s.add_argument("--log-every", dest="log_every", type=int)
     s.add_argument("--eval-every", dest="eval_every", type=int)
     s.add_argument("--checkpoint-every", dest="checkpoint_every", type=int)
@@ -302,6 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--background", choices=["black", "white", "random"])
     s.add_argument("--max-gaussians", dest="max_gaussians", type=int)
     s.add_argument("--no-densify", dest="no_densify", action="store_true")
+    s.add_argument("--object-only", dest="object_only", action="store_true")
     s.add_argument("--seed", type=int)
     s.set_defaults(func=cmd_run, initial_opacity=None, sh_degree=None, random_points=None, log_every=None,
                    eval_every=None, checkpoint_every=None, orbit_frames=None, elevation_deg=None)

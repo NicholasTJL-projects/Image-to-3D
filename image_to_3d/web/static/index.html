@@ -81,6 +81,10 @@
       <section id="multiview" class="multiview" hidden>
         <h2>Full 3D from many photos</h2>
         <p>Photograph one object from all sides (20 to 200 photos, about 70 % overlap) and get a Gaussian Splatting scene. Takes several minutes.</p>
+        <label class="row">
+          <span>Object only (remove background)</span>
+          <input type="checkbox" id="mv-object-only" checked>
+        </label>
         <label class="btn ghost file-btn">
           <input id="mv-files" type="file" accept="image/*" multiple hidden>
           <span id="mv-label">Choose photos</span>

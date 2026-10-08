@@ -54,9 +54,22 @@ def load_scene(workspace: str | Path, *, sparse: str | Path | None = None, image
 
 
 def init_gaussians(scene: Scene, workspace: str | Path, *, initial_opacity: float = 0.1, sh_degree: int = 0,
-                   random_points: int = 0, seed: int = 0) -> GaussianCloud:
-    """Seed Gaussians from the sparse SfM points (optionally padded with random points)."""
+                   random_points: int = 0, seed: int = 0, masks: dict | None = None,
+                   hull_min_votes: int = 2) -> GaussianCloud:
+    """Seed Gaussians from the sparse SfM points (optionally padded with random points).
+
+    With ``masks`` (``{camera name: mask path or array}``, see :mod:`image_to_3d.masks`) only
+    points inside the subject's visual hull are kept, so the background never gets seeded.
+    """
     xyz, rgb = scene.points_xyz, scene.points_rgb
+    if masks and len(xyz):
+        from .masks import hull_filter, load_mask
+
+        cams = [c for c in scene.cameras if c.name in masks]
+        ms = [masks[c.name] if isinstance(masks[c.name], np.ndarray) else load_mask(masks[c.name]) for c in cams]
+        keep = hull_filter(xyz, cams, ms, min_votes=hull_min_votes)
+        if keep.sum() >= 10:
+            xyz, rgb = xyz[keep], rgb[keep]
     if random_points > 0 or len(xyz) == 0:
         rng = np.random.default_rng(seed)
         n = random_points or 10_000

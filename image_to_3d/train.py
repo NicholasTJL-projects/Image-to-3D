@@ -52,6 +52,12 @@ class TrainConfig:
     opacity_reset_interval: int = 3000
     max_gaussians: int | None = None   # safety cap, useful on CPU
 
+    # object-only mode (needs per-camera masks, see image_to_3d.masks)
+    object_only: bool = False
+    hull_prune_interval: int = 200      # delete Gaussians outside the silhouette every n steps
+    hull_min_votes: int = 2             # ... when outside in at least this many views
+    hull_margin_frac: float = 0.015     # mask dilation as a fraction of image width
+
     # bookkeeping
     log_every: int = 100
     eval_every: int = 1000
@@ -97,7 +103,7 @@ def load_image(cam: Camera, downscale: int = 1, size: tuple[int, int] | None = N
 class Trainer:
     def __init__(self, scene: Scene, cloud: GaussianCloud, cfg: TrainConfig,
                  images: dict[str, np.ndarray] | None = None, out_dir: str | Path | None = None,
-                 log: Callable[[str], None] = print):
+                 log: Callable[[str], None] = print, masks: dict[str, "str | Path | np.ndarray"] | None = None):
         torch = _torch()
         self.torch = torch
         self.cfg = cfg
@@ -136,6 +142,29 @@ class Trainer:
 
         self.train_images = [_img(c, o) for c, o in zip(self.train_cams, train_scene.cameras)]
         self.test_images = [_img(c, o) for c, o in zip(self.test_cams, test_scene.cameras)]
+
+        # object-only: per-camera subject masks (float HxW in [0,1]) at training resolution
+        self.object_only = bool(cfg.object_only and masks)
+        self.train_masks: list = []
+        self.test_masks: list = []
+        self.train_masks_np: list[np.ndarray] = []
+        if self.object_only:
+            from .masks import load_mask
+
+            def _mask(cam: Camera, original: Camera) -> np.ndarray:
+                m = masks.get(original.name)
+                if m is None:
+                    raise KeyError(f"no mask for camera {original.name!r}")
+                if not isinstance(m, np.ndarray):
+                    m = load_mask(m, size=(cam.width, cam.height))
+                elif m.shape[0] != cam.height or m.shape[1] != cam.width:
+                    m = cv2.resize(m.astype(np.float32), (cam.width, cam.height), interpolation=cv2.INTER_AREA)
+                return np.clip(m.astype(np.float32), 0.0, 1.0)
+
+            self.train_masks_np = [_mask(c, o) for c, o in zip(self.train_cams, train_scene.cameras)]
+            self.train_masks = [torch.as_tensor(m, device=self.device)[..., None] for m in self.train_masks_np]
+            self.test_masks = [torch.as_tensor(_mask(c, o), device=self.device)[..., None]
+                               for c, o in zip(self.test_cams, test_scene.cameras)]
 
         from .render_torch import TorchCamera
         self.train_tcams = [TorchCamera.from_camera(c, self.device) for c in self.train_cams]
@@ -186,6 +215,8 @@ class Trainer:
 
     def _background(self):
         torch = self.torch
+        if self.object_only and self.cfg.background == "black":
+            return torch.rand(3, device=self.device)  # random colour: off-object Gaussians cannot hide
         if self.cfg.background == "white":
             return torch.ones(3, device=self.device)
         if self.cfg.background == "random":
@@ -290,6 +321,18 @@ class Trainer:
         self.log(f"[{self.step}] densify: {n_before} -> {self.num_gaussians} gaussians "
                  f"(clone {int(clone.sum())}, split {int(split.sum())}, prune {int(prune.sum())})")
 
+    def _hull_prune(self) -> int:
+        """Delete Gaussians that project outside the subject silhouette in several views."""
+        from .masks import outside_votes
+
+        means = self.params["means"].detach().cpu().numpy()
+        votes = outside_votes(means, self.train_cams, self.train_masks_np, margin_frac=self.cfg.hull_margin_frac)
+        keep = self.torch.as_tensor(votes < self.cfg.hull_min_votes, device=self.device)
+        n_prune = int((~keep).sum())
+        if n_prune and int(keep.sum()) > 10:
+            self._replace_params(self.params, keep_mask=keep)
+        return n_prune
+
     def _reset_opacity(self):
         torch = self.torch
         p = self.params["logit_opacity"]
@@ -313,8 +356,12 @@ class Trainer:
 
         i = int(self.rng.integers(len(self.train_cams)))
         tcam, gt = self.train_tcams[i], self.train_images[i]
-        out = render(self.params, tcam, background=self._background(), backend=self.backend)
+        bg = self._background()
+        out = render(self.params, tcam, background=bg, backend=self.backend)
         img = out.image
+        if self.object_only:
+            m = self.train_masks[i]
+            gt = gt * m + bg * (1 - m)  # the photo's background is replaced by the render background
         l1 = torch.abs(img - gt).mean()
         loss = (1 - c.lambda_dssim) * l1 + c.lambda_dssim * (1 - ssim(img, gt))
         loss.backward()
@@ -339,6 +386,10 @@ class Trainer:
                     self._densify_and_prune(tcam.width, tcam.height)
                 if c.opacity_reset_interval and self.step % c.opacity_reset_interval == 0:
                     self._reset_opacity()
+            if self.object_only and c.hull_prune_interval and self.step % c.hull_prune_interval == 0:
+                n = self._hull_prune()
+                if n:
+                    self.log(f"[{self.step}] hull prune: removed {n} gaussians outside the silhouette")
         return float(loss.item())
 
     @property
@@ -351,12 +402,22 @@ class Trainer:
         torch = self.torch
         cams = self.test_tcams or self.train_tcams
         imgs = self.test_images or self.train_images
+        msks = (self.test_masks or self.train_masks) if self.object_only else [None] * len(cams)
         with torch.no_grad():
-            vals = [psnr(render(self.params, c, backend=self.backend).image, im) for c, im in zip(cams, imgs)]
+            vals = []
+            for c, im, m in zip(cams, imgs, msks):
+                if m is None:
+                    vals.append(psnr(render(self.params, c, backend=self.backend).image, im))
+                else:
+                    bg = torch.full((3,), 0.5, device=self.device)
+                    vals.append(psnr(render(self.params, c, background=bg, backend=self.backend).image, im * m + bg * (1 - m)))
         return float(np.mean(vals)) if vals else float("nan")
 
     def train(self) -> GaussianCloud:
         c = self.cfg
+        if self.object_only:
+            n = self._hull_prune()
+            self.log(f"object-only: {n} initial gaussians outside the silhouette removed, {self.num_gaussians} remain")
         self.log(f"training {self.num_gaussians} gaussians for {c.iterations} iters on {self.device} "
                  f"({self.backend} backend, {len(self.train_cams)} train / {len(self.test_cams)} test views, "
                  f"{self.train_cams[0].width}x{self.train_cams[0].height})")
@@ -372,6 +433,8 @@ class Trainer:
                 self.log(f"[{self.step}] test PSNR {self.evaluate():.2f} dB")
             if self.out_dir and c.checkpoint_every and self.step % c.checkpoint_every == 0:
                 self.cloud().save_ply(self.out_dir / f"point_cloud_{self.step:06d}.ply")
+        if self.object_only:
+            self._hull_prune()
         final = self.cloud()
         if self.out_dir:
             final.save_ply(self.out_dir / "point_cloud.ply")
@@ -381,8 +444,8 @@ class Trainer:
 
 
 def train(scene: Scene, cloud: GaussianCloud, cfg: TrainConfig | None = None, *, images=None, out_dir=None,
-          log=print) -> GaussianCloud:
-    return Trainer(scene, cloud, cfg or TrainConfig(), images=images, out_dir=out_dir, log=log).train()
+          log=print, masks=None) -> GaussianCloud:
+    return Trainer(scene, cloud, cfg or TrainConfig(), images=images, out_dir=out_dir, log=log, masks=masks).train()
 
 
 def config_to_dict(cfg: TrainConfig) -> dict:

@@ -68,6 +68,7 @@ mvGo.addEventListener('click', async () => {
   mvGo.disabled = true;
   const fd = new FormData();
   for (const f of mvFiles.files) fd.append('images', f, f.name);
+  fd.append('object_only', $('mv-object-only').checked);
   try {
     const res = await fetch('./api/jobs/multiview', { method: 'POST', body: fd });
     if (!res.ok) throw new Error((await res.json()).detail || res.statusText);

@@ -122,6 +122,7 @@ async def create_multiview_job(
     images: list[UploadFile] = File(...),
     iterations: int = Form(3000),
     downscale: int = Form(4),
+    object_only: bool = Form(True),
 ) -> JSONResponse:
     """Photos of one object from many angles -> camera poses (COLMAP) -> Gaussian Splatting scene."""
     if not multiview_enabled():
@@ -130,7 +131,8 @@ async def create_multiview_job(
         raise HTTPException(400, "upload at least 3 photos taken from different angles (20+ recommended)")
     if len(images) > 300:
         raise HTTPException(400, "at most 300 photos per job")
-    job = store.create("multiview", options={"iterations": iterations, "downscale": downscale, "photos": len(images)})
+    job = store.create("multiview", options={"iterations": iterations, "downscale": downscale, "photos": len(images),
+                                             "object_only": object_only})
     ws = store.dir(job.id)
     src_dir = ws / "upload"
     src_dir.mkdir(exist_ok=True)
@@ -148,8 +150,13 @@ async def create_multiview_job(
         capture(str(src_dir), ws / "images", CaptureConfig(max_side=1280, min_blur=0.0))
         report("recovering camera poses (COLMAP)", 0.15)
         scene = run_sfm(ws, matcher="exhaustive")  # unordered photos: match every pair
+        masks = None
+        if object_only:
+            from ..masks import compute_masks
+
+            masks = compute_masks(scene, ws / "masks", progress=lambda msg, f: report(msg, 0.3 + 0.08 * f))
         report("initialising gaussians", 0.4)
-        cloud = init_gaussians(scene, ws)
+        cloud = init_gaussians(scene, ws, masks=masks)
         total = int(iterations)
 
         def log(msg: str) -> None:
@@ -162,12 +169,14 @@ async def create_multiview_job(
                     pass
             report(msg[:80], job.progress)
 
-        cfg = TrainConfig(iterations=total, downscale=int(downscale), log_every=100, eval_every=0)
-        out = train(scene, cloud, cfg, out_dir=ws / "output", log=log)
+        cfg = TrainConfig(iterations=total, downscale=int(downscale), log_every=100, eval_every=0,
+                          object_only=bool(masks), densify_from=100, densify_until=max(200, int(total * 0.65)),
+                          densify_interval=50, densify_grad_threshold=1e-4, opacity_reset_interval=0)
+        out = train(scene, cloud, cfg, out_dir=ws / "output", log=log, masks=masks)
         shutil.copy(ws / "output" / "point_cloud.ply", ws / "splat.ply")
         return {"files": {"splat": "splat.ply"},
                 "meta": {"gaussians": len(out), "cameras": len(scene), "points": len(scene.points_xyz),
-                         "photos": len(images)}}
+                         "photos": len(images), "object_only": bool(masks)}}
 
     store.submit(job, run)
     return JSONResponse(job.to_dict(), status_code=202)
