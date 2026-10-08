@@ -1,0 +1,9 @@
+.git
+jobs/
+workspaces/
+tests/
+.github/
+scripts/
+__pycache__/
+*.pyc
+*.mp4

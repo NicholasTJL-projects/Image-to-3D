@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "image-to-3d"
-version = "0.1.0"
-description = "Reconstruct a 3D Gaussian Splatting scene from 2D photos or video captures."
+version = "0.2.0"
+description = "Web app and toolkit that turns 2D photos into 3D: single-image depth meshes and multi-view Gaussian Splatting."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,18 +16,30 @@ dependencies = [
     "pyyaml>=6.0",
     "plyfile>=1.0",
     "tqdm>=4.65",
+    "pillow>=10.0",
+    "trimesh>=4.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
-train = ["torch>=2.1"]
+depth = ["torch>=2.1", "timm>=0.9"]                 # MiDaS monocular depth
+segment = ["rembg>=2.0", "onnxruntime>=1.16"]       # U^2-Net background removal
+train = ["torch>=2.1"]                              # multi-view Gaussian Splatting trainer
 gsplat = ["torch>=2.1", "gsplat>=1.0"]
-dev = ["pytest>=7.0"]
+web = ["torch>=2.1", "timm>=0.9", "rembg>=2.0", "onnxruntime>=1.16"]
+dev = ["pytest>=7.0", "httpx>=0.25"]
 
 [project.scripts]
 image-to-3d = "image_to_3d.cli:main"
+image-to-3d-web = "image_to_3d.web.server:main"
 
 [tool.setuptools.packages.find]
 include = ["image_to_3d*"]
+
+[tool.setuptools.package-data]
+image_to_3d = ["web/static/*", "web/static/vendor/*", "web/static/vendor/utils/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

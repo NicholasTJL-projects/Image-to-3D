@@ -7,8 +7,10 @@ dist/
 .venv/
 venv/
 
-# capture workspaces (large binaries)
+# capture workspaces and web job output (large binaries)
 workspaces/
+jobs/
+node_modules/
 *.mp4
 *.mov
 *.ply
