@@ -180,6 +180,14 @@ async def create_multiview_job(
             capture(str(src_dir), ws / "images", CaptureConfig(max_side=1280, min_blur=0.0))
             report("recovering camera poses (COLMAP)", 0.15)
             scene = run_sfm(ws, matcher="exhaustive")  # unordered photos: match every pair
+        from ..coverage import assess_coverage
+
+        n_submitted = len(images) if not is_video else len(list((ws / "images").glob("*.jpg")))
+        coverage = assess_coverage(scene, n_submitted)
+        job.meta = {"coverage": coverage}
+        if coverage["cameras_posed"] < 3:
+            raise RuntimeError("Only " + str(coverage["cameras_posed"]) + " photos could be posed. " + " ".join(coverage["advice"]))
+        report(f"poses recovered for {coverage['cameras_posed']} views, coverage {coverage['verdict']}", 0.3)
         masks = None
         if object_only:
             from ..masks import compute_masks
@@ -206,8 +214,8 @@ async def create_multiview_job(
         shutil.copy(ws / "output" / "point_cloud.ply", ws / "splat.ply")
         return {"files": {"splat": "splat.ply"},
                 "meta": {"gaussians": len(out), "cameras": len(scene), "points": len(scene.points_xyz),
-                         "photos": len(images) if not is_video else len(list((ws / "images").glob("*.jpg"))),
-                         "video": is_video, "object_only": bool(masks)}}
+                         "photos": n_submitted, "video": is_video, "object_only": bool(masks),
+                         "coverage": coverage}}
 
     store.submit(job, run)
     return JSONResponse(job.to_dict(), status_code=202)

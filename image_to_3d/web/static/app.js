@@ -216,6 +216,13 @@ function onDone(job) {
   goBtn.disabled = !selectedFile;
   mvRefresh();
   const m = job.meta || {};
+  const cov = m.coverage;
+  $('coverage').hidden = !(job.kind === 'multiview' && cov);
+  if (job.kind === 'multiview' && cov) {
+    $('coverage').className = `coverage ${cov.verdict}`;
+    $('cov-title').textContent = `Coverage: ${cov.verdict} · ${cov.cameras_posed} of ${cov.photos_submitted} views posed · ${Math.round(cov.azimuth_coverage_deg)}° around the object`;
+    $('cov-advice').innerHTML = (cov.advice || []).map((a) => `<li>${a}</li>`).join('');
+  }
   if (job.kind === 'multiview') {
     $('st-verts').textContent = fmt(m.cameras);
     $('st-faces').textContent = fmt(m.points);

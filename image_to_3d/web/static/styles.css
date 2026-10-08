@@ -108,3 +108,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .cam-wrap.flash::after { content: ""; position: absolute; inset: 0; background: #fff; opacity: .35; animation: flash .25s ease-out forwards; }
 @keyframes flash { to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cam-wrap.flash::after { animation: none; opacity: 0; } }
+
+.coverage { border-radius: 10px; padding: 10px 12px; font-size: 13px; background: var(--panel-2); border-left: 3px solid var(--accent-2); }
+.coverage.fair { border-left-color: #fbbf24; }
+.coverage.poor { border-left-color: var(--danger); }
+.coverage ul { margin: 6px 0 0; padding-left: 16px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
