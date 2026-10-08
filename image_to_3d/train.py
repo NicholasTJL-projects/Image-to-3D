@@ -73,15 +73,22 @@ def _torch():
     return torch
 
 
-def load_image(cam: Camera, downscale: int = 1) -> np.ndarray:
-    """Read the camera's image as ``(H,W,3)`` float RGB in [0,1] at the training resolution."""
+def load_image(cam: Camera, downscale: int = 1, size: tuple[int, int] | None = None) -> np.ndarray:
+    """Read the camera's image as ``(H,W,3)`` float RGB in [0,1] at the training resolution.
+
+    ``size`` is the exact ``(width, height)`` to produce; when omitted it is derived the same way
+    :meth:`Camera.scaled` rounds, so odd image sizes stay consistent with the camera.
+    """
     if cam.image_path is None:
         raise ValueError(f"camera {cam.name!r} has no image_path")
     img = cv2.imread(cam.image_path, cv2.IMREAD_COLOR)
     if img is None:
         raise FileNotFoundError(cam.image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    target = (cam.width // downscale, cam.height // downscale)
+    if size is None:
+        scaled = cam.scaled(1.0 / downscale) if downscale != 1 else cam
+        size = (scaled.width, scaled.height)
+    target = size
     if img.shape[1] != target[0] or img.shape[0] != target[1]:
         img = cv2.resize(img, target, interpolation=cv2.INTER_AREA)
     return img.astype(np.float32) / 255.0
@@ -125,7 +132,7 @@ class Trainer:
                 if arr.shape[0] != cam.height or arr.shape[1] != cam.width:
                     arr = cv2.resize(arr, (cam.width, cam.height), interpolation=cv2.INTER_AREA)
                 return torch.as_tensor(np.asarray(arr, dtype=np.float32), device=self.device)
-            return torch.as_tensor(load_image(original, ds), device=self.device)
+            return torch.as_tensor(load_image(original, ds, size=(cam.width, cam.height)), device=self.device)
 
         self.train_images = [_img(c, o) for c, o in zip(self.train_cams, train_scene.cameras)]
         self.test_images = [_img(c, o) for c, o in zip(self.test_cams, test_scene.cameras)]

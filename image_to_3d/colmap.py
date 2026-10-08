@@ -18,6 +18,16 @@ def colmap_available(binary: str = "colmap") -> bool:
     return shutil.which(binary) is not None
 
 
+def colmap_has_cuda(binary: str = "colmap") -> bool:
+    """COLMAP builds without CUDA refuse ``--SiftExtraction.use_gpu 1``; detect that from the banner."""
+    try:
+        out = subprocess.run([binary, "-h"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    banner = (out.stdout + out.stderr).lower()
+    return "with cuda" in banner and "without cuda" not in banner
+
+
 def _run(cmd: list[str], log: Path | None = None) -> None:
     print("$ " + " ".join(cmd), flush=True)
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -35,7 +45,7 @@ def run_sfm(
     camera_model: str = "OPENCV",
     single_camera: bool = True,
     matcher: str = "sequential",
-    use_gpu: bool = True,
+    use_gpu: bool | None = None,
     binary: str = "colmap",
 ) -> Scene:
     """Run feature extraction, matching, mapping and undistortion.
@@ -61,6 +71,8 @@ def run_sfm(
     colmap_dir.mkdir(parents=True, exist_ok=True)
     db = colmap_dir / "database.db"
     log = colmap_dir / "colmap.log"
+    if use_gpu is None:  # auto: only when the binary was built with CUDA
+        use_gpu = colmap_has_cuda(binary)
     gpu = "1" if use_gpu else "0"
 
     _run(

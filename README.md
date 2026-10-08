@@ -86,6 +86,23 @@ It includes a NumPy reference rasteriser, a differentiable pure-PyTorch rasteris
 
 Capture tips: keep the subject and lighting fixed, move the camera rather than the object, overlap neighbouring photos by about 70 %, cover the top and all sides, and avoid glass, mirrors and plain walls.
 
+### Testing the multi-view pipeline without real photos
+
+`scripts/make_synthetic_photoset.py` renders a textured scene from 36 camera positions with
+Three.js in headless Chromium, which gives COLMAP plenty of features to match:
+
+```bash
+pip install playwright && playwright install chromium
+python scripts/make_synthetic_photoset.py /tmp/mv/photos
+image-to-3d capture /tmp/mv/photos /tmp/mv/ws --min-blur 0
+image-to-3d sfm     /tmp/mv/ws --matcher exhaustive          # ~2 min on 4 CPU cores
+image-to-3d train   /tmp/mv/ws --iterations 600 --downscale 4 --max-gaussians 30000
+image-to-3d render  /tmp/mv/ws --views orbit --video
+```
+
+COLMAP builds without CUDA (the Ubuntu package, for example) are detected automatically and
+SIFT runs on the CPU. On Ubuntu/Debian: `sudo apt-get install -y colmap`.
+
 ## Project layout
 
 ```
@@ -101,6 +118,7 @@ image_to_3d/
   render_torch.py   differentiable PyTorch rasteriser (+ gsplat backend)
   train.py          3DGS training loop
   cli.py            image-to-3d command
+scripts/            synthetic photo-set generator, full-pipeline shell script
 tests/              pytest suite (renderers, I/O, segmentation, mesh, web API)
 Dockerfile          CPU image with weights baked in
 ```

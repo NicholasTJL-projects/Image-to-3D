@@ -60,3 +60,17 @@ def test_training_improves_psnr(tmp_path):
     assert after > before + 1.0
     assert (tmp_path / "point_cloud.ply").exists()
     assert len(out) <= 200
+
+
+def test_load_image_matches_scaled_camera(tmp_path):
+    import cv2
+
+    from image_to_3d.camera import Camera
+    from image_to_3d.train import load_image
+
+    cv2.imwrite(str(tmp_path / "odd.png"), np.zeros((599, 799, 3), np.uint8))
+    cam = Camera.look_at([0, 0, -3.0], [0, 0, 0.0], width=799, height=599, focal=700, name="odd")
+    cam.image_path = str(tmp_path / "odd.png")
+    small = cam.scaled(0.25)
+    img = load_image(cam, 4)
+    assert img.shape[:2] == (small.height, small.width) == (150, 200)

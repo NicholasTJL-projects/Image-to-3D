@@ -11,7 +11,7 @@ sfm:
   matcher: sequential   # "sequential" for video, "exhaustive" for unordered photos
   camera_model: OPENCV
   single_camera: true
-  use_gpu: true
+  use_gpu: null          # null = auto-detect a CUDA build; true/false to force
 
 init:
   initial_opacity: 0.1
