@@ -101,7 +101,12 @@ def run_sfm(
           "--output_path", str(sparse)], log)
     models = sorted(p for p in sparse.iterdir() if p.is_dir())
     if not models:
-        raise RuntimeError("COLMAP mapper produced no model: not enough overlap between frames.")
+        hint = ""
+        if log.exists() and "No good initial image pair" in log.read_text(errors="ignore"):
+            hint = (" COLMAP found no image pair with enough parallax. This happens when the camera turns in place "
+                    "(a pan) instead of moving around the subject: translate the camera, do not just rotate it.")
+        raise RuntimeError("COLMAP could not reconstruct the scene: not enough overlap or camera movement between "
+                           "frames." + hint)
     # the largest model (most images) is the one we want
     best = max(models, key=lambda p: (p / "images.bin").stat().st_size if (p / "images.bin").exists() else 0)
 
