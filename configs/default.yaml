@@ -1,0 +1,44 @@
+# Default settings for `image-to-3d`. Any CLI flag overrides the value here.
+
+capture:
+  every_nth: 3          # keep every 3rd video frame (30 fps -> 10 fps)
+  max_frames: 300
+  max_side: 1600        # downscale so the longest edge is 1600 px
+  min_blur: 60.0        # drop frames whose Laplacian variance is below this
+  keep_sharpest_ratio: 0.9
+
+sfm:
+  matcher: sequential   # "sequential" for video, "exhaustive" for unordered photos
+  camera_model: OPENCV
+  single_camera: true
+  use_gpu: true
+
+init:
+  initial_opacity: 0.1
+  sh_degree: 0
+  random_points: 0      # >0 adds that many random points inside the camera rig
+
+train:
+  iterations: 7000
+  device: auto
+  backend: auto         # torch (any device) or gsplat (CUDA)
+  downscale: 2
+  background: black
+  lambda_dssim: 0.2
+  densify: true
+  densify_from: 500
+  densify_interval: 100
+  densify_grad_threshold: 0.0002
+  percent_dense: 0.01
+  prune_opacity: 0.005
+  opacity_reset_interval: 3000
+  max_gaussians: null   # e.g. 200000 to bound memory on small machines
+  log_every: 100
+  eval_every: 1000
+  checkpoint_every: 0
+  test_every_nth: 8
+
+render:
+  orbit_frames: 60
+  elevation_deg: 10
+  background: black
