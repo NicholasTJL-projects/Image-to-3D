@@ -53,7 +53,7 @@ GET  /api/health                 available backends on this server
 POST /api/jobs                   multipart: image, remove_background, relief, mirror_back, depth_backend, fov_deg
 GET  /api/jobs/{id}              status, progress, stage, result file names, mesh statistics
 GET  /api/jobs/{id}/files/{name} model.glb · splat.ply · depth.png · mask.png · depth16.png · meta.json
-POST /api/jobs/multiview         video or images -> Gaussian Splatting scene (needs COLMAP + torch)
+POST /api/jobs/multiview         images[] or video (+ object_only) -> Gaussian Splatting scene (needs COLMAP + torch)
 ```
 
 Interactive docs at `/api/docs`. Jobs run on a worker thread and are persisted under `IMAGE_TO_3D_JOBS` (default `./jobs`); results are deleted after 24 hours.
@@ -71,13 +71,26 @@ result.save("out/")          # out/model.glb, out/splat.ply, out/depth.png, ...
 
 ## Multi-view capture
 
-For a real 3D capture, photograph the object from many angles (20 to 200 photos, every side, about 70 % overlap between neighbours) and run the Gaussian Splatting pipeline with the `image-to-3d` CLI, or POST the photos to `/api/jobs/multiview` on a server that has COLMAP and a GPU:
+For a real 3D capture, the object has to be seen from many angles. The web app offers three ways
+to get there when the server has COLMAP and PyTorch: **guided capture** (the page takes a
+full-resolution still from the phone camera every half second while you walk around, with a
+coverage counter), a **walk-around video** (the sharpest 80 frames are extracted), or a folder of
+**photos**. Aim for 40 to 80 views in two loops at different heights with about 70 % overlap
+between neighbours.
+
+**Object-only mode** (on by default) segments the subject in every posed photo, trains against a
+random background so off-object Gaussians fade out, and deletes Gaussians that project outside the
+silhouette in two or more views. Without it, a plain background has no texture to fix its depth and
+becomes floating blobs. COLMAP still needs features to pose the cameras, so a patterned surface
+under the object helps even in object-only mode.
+
+The same pipeline runs from the CLI:
 
 ```bash
 image-to-3d capture photos/ workspaces/desk           # photos -> images/ (also accepts a video)
 image-to-3d sfm     workspaces/desk --matcher exhaustive   # COLMAP poses + sparse points
 image-to-3d init    workspaces/desk                   # seed Gaussians from the points
-image-to-3d train   workspaces/desk --iterations 7000 # optimise (PyTorch; gsplat on a GPU)
+image-to-3d train   workspaces/desk --iterations 7000 --object-only  # optimise (PyTorch; gsplat on a GPU)
 image-to-3d render  workspaces/desk --views orbit --video
 image-to-3d demo    workspaces/demo                   # synthetic end-to-end run, no footage needed
 ```
@@ -126,7 +139,8 @@ image_to_3d/
   gaussians.py      Gaussian cloud + 3DGS PLY I/O
   render_np.py      NumPy reference rasteriser
   render_torch.py   differentiable PyTorch rasteriser (+ gsplat backend)
-  train.py          3DGS training loop
+  train.py          3DGS training loop (object-only: masked loss + visual-hull pruning)
+  masks.py          per-photo subject masks and visual-hull filter
   cli.py            image-to-3d command
 scripts/            synthetic photo-set generator, full-pipeline shell script
 tests/              pytest suite (renderers, I/O, segmentation, mesh, web API)
