@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Image to 3D Gallery</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+  /* Layout: a dark studio; one large viewer on the right, a thin filmstrip of results and the facts on the left. */
+  :root {
+    --bg: #0e1016;
+    --panel: #151823;
+    --panel-2: #1c2030;
+    --line: #2a3045;
+    --fg: #e9ecf4;
+    --muted: #97a0b8;
+    --accent: #7fe0bf;
+    --accent-2: #74a9ff;
+    --display: "Sora", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --body: "IBM Plex Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f4f8; --panel: #ffffff; --panel-2: #eaedf4; --line: #d6dae6; --fg: #161a26; --muted: #5a6279;
+      --accent: #0f9d74; --accent-2: #2f6fe0; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f4f8; --panel: #ffffff; --panel-2: #eaedf4; --line: #d6dae6; --fg: #161a26; --muted: #5a6279;
+    --accent: #0f9d74; --accent-2: #2f6fe0; color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding-block: 18px 28px; padding-inline: 16px; display: flex; flex-direction: column; gap: 16px; min-height: 100%; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+  h1 { font: 600 24px/1.15 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h1 span { color: var(--accent); }
+  .eyebrow { font: 500 12px/1 var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  header a { color: var(--accent-2); text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+
+  .grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; flex: 1; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .strip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .item { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); cursor: pointer; text-align: left; padding: 0; color: inherit; font: inherit; }
+  .item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .item.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+  .item .cap { padding: 6px 8px; font: 500 13px/1.3 var(--body); display: flex; justify-content: space-between; gap: 6px; }
+  .item .cap small { color: var(--muted); font-weight: 400; }
+
+  .facts { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .facts h2 { margin: 0; font: 600 17px/1.2 var(--display); }
+  .facts p { margin: 0; color: var(--muted); }
+  dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  dl div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  dt { font: 500 11px/1.2 var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  dd { margin: 2px 0 0; font: 400 15px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+
+  .viewer-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 520px; overflow: hidden; min-width: 0; }
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tab { background: transparent; border: 0; color: var(--muted); font: 500 14px/1 var(--body); padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+  .tab:focus-visible { outline: 2px solid var(--accent); }
+  .tab.active { background: var(--panel-2); color: var(--fg); }
+  .tab:disabled { opacity: 0.4; cursor: not-allowed; }
+  .spacer { flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .toggle input { accent-color: var(--accent); }
+  .stage { position: relative; flex: 1; background: radial-gradient(ellipse at 50% 40%, var(--panel-2) 0%, var(--bg) 75%); }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+  .view canvas { display: block; width: 100% !important; height: 100% !important; }
+  .depth-view.active { display: flex; align-items: center; justify-content: center; padding: 12px; }
+  .depth-view img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+  .note { position: absolute; left: 12px; bottom: 12px; right: 12px; display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; pointer-events: none; }
+  .status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  .status p { margin: 0; max-width: 40ch; }
+
+  footer { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 12px; }
+  footer a { color: var(--accent-2); text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { .tab, .item { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Kunami Labs</div>
+      <h1>Image <span>→</span> 3D Gallery</h1>
+    </div>
+    <p>Results from the Image-to-3D pipeline: one photo becomes a textured mesh and a Gaussian splat, and a set of photos becomes a full splat scene. Drag to orbit, scroll to zoom. The pipeline runs in the <a href="https://github.com/NicholasTJL-projects/Image-to-3D" target="_blank" rel="noopener">open-source app</a> (<a href="./app/">front end</a>); this page shows its output.</p>
+  </header>
+
+  <div class="grid">
+    <aside class="side">
+      <div class="strip" id="strip" role="tablist" aria-label="Results"></div>
+      <section class="facts" id="facts">
+        <h2 id="f-title">Cat</h2>
+        <p id="f-blurb"></p>
+        <dl id="f-stats"></dl>
+        <p class="eyebrow" id="f-source"></p>
+      </section>
+    </aside>
+
+    <section class="viewer-card">
+      <div class="tabs" role="tablist" aria-label="Views">
+        <button class="tab active" data-view="mesh" id="tab-mesh" role="tab">Mesh</button>
+        <button class="tab" data-view="splat" id="tab-splat" role="tab">Splat</button>
+        <button class="tab" data-view="depth" id="tab-depth" role="tab">Depth</button>
+        <span class="spacer"></span>
+        <label class="toggle"><input type="checkbox" id="rotate" checked> rotate</label>
+        <label class="toggle"><input type="checkbox" id="wire"> wireframe</label>
+      </div>
+      <div class="stage">
+        <div class="view active" id="mesh-view"></div>
+        <div class="view" id="splat-view"></div>
+        <div class="view depth-view" id="depth-view"><img id="depth-img" alt="Relative depth map, bright is near"></div>
+        <div class="status" id="status" hidden><p id="status-text">Loading…</p></div>
+        <div class="note"><span id="note-left">Textured mesh (GLB) · double-sided</span><span>drag · scroll · right-drag to pan</span></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span>Depth: Depth Anything V2 small · Segmentation: U²-Net · Splatting: 3D Gaussian Splatting trained with the repo's PyTorch rasteriser</span>
+    <span>Viewers: Three.js and GaussianSplats3D · MIT licensed</span>
+  </footer>
+</div>
+
+<script type="importmap">
+  { "imports": { "three": "./three.module.js", "three/addons/": "./" } }
+</script>
+<script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from './OrbitControls.js';
+  import { GLTFLoader } from './GLTFLoader.js';
+
+  const $ = (id) => document.getElementById(id);
+  const manifest = await fetch('./manifest.json').then((r) => r.json());
+  let current = manifest[0];
+  let activeView = 'mesh';
+  let splatViewer = null, splatModule = null, splatLoadedFor = null;
+
+  // ---------------- filmstrip
+  const strip = $('strip');
+  for (const item of manifest) {
+    const b = document.createElement('button');
+    b.className = 'item'; b.setAttribute('role', 'tab'); b.dataset.id = item.id;
+    b.innerHTML = `<img src="${item.input}" alt=""><div class="cap"><span>${item.label}</span><small>${item.kind === 'single' ? 'one photo' : '36 photos'}</small></div>`;
+    b.addEventListener('click', () => select(item.id));
+    strip.appendChild(b);
+  }
+
+  function fmt(n) { return n == null ? '–' : Number(n).toLocaleString(); }
+  // Binary assets ship as base64 text (the host serves text, not .glb/.ply); decode in memory.
+  const binCache = new Map();
+  async function fetchBinary(url) {
+    if (binCache.has(url)) return binCache.get(url);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status} loading ${url}`);
+    let buffer;
+    if (url.endsWith('.txt')) {  // base64 text (hosts that only serve text)
+      const raw = atob((await res.text()).trim());
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      buffer = bytes.buffer;
+    } else {
+      buffer = await res.arrayBuffer();  // raw .glb / .ply
+    }
+    binCache.set(url, buffer);
+    return buffer;
+  }
+  function select(id) {
+    current = manifest.find((m) => m.id === id);
+    document.querySelectorAll('.item').forEach((el) => el.classList.toggle('active', el.dataset.id === id));
+    $('f-title').textContent = current.label;
+    $('f-blurb').textContent = current.blurb;
+    const s = current.stats;
+    const rows = current.kind === 'single'
+      ? [['Vertices', fmt(s.vertices)], ['Triangles', fmt(s.faces)], ['Gaussians', fmt(s.gaussians)], ['CPU time', `${s.seconds} s`]]
+      : [['Cameras posed', fmt(s.cameras)], ['SfM points', fmt(s.points)], ['Gaussians', fmt(s.gaussians)], ['Held-out PSNR', `${s.psnr} dB`]];
+    $('f-stats').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+    $('f-source').textContent = current.kind === 'single' ? `depth model: ${s.depth_model.replace('_', ' ')}` : 'COLMAP 3.9.1 (CPU) · 600 iterations · quarter resolution';
+    const hasMesh = !!current.glb;
+    $('tab-mesh').disabled = !hasMesh; $('tab-depth').disabled = !current.depth;
+    if (!hasMesh && activeView !== 'splat') setView('splat'); else if (activeView === 'depth' && !current.depth) setView('mesh');
+    if (current.depth) $('depth-img').src = current.depth;
+    if (hasMesh) loadMesh(current.glb); else clearMesh();
+    if (activeView === 'splat') loadSplat(current); else splatLoadedFor = null;
+  }
+
+  // ---------------- tabs
+  function setView(v) {
+    activeView = v;
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === v));
+    document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active', el.id === `${v}-view`));
+    $('note-left').textContent = v === 'mesh' ? 'Textured mesh (GLB) · double-sided' : v === 'splat' ? 'Gaussian splat (PLY, 3DGS layout)' : 'Relative depth · bright is near';
+    $('status').hidden = !(statusFor === v);
+    if (v === 'mesh') resize();
+    if (v === 'splat') loadSplat(current);
+  }
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => !t.disabled && setView(t.dataset.view)));
+
+  // ---------------- mesh viewer
+  const meshView = $('mesh-view');
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  meshView.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+  camera.position.set(0, 0.15, 2.4);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 1.6;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334466, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(2, 3, 4); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xbfd4ff, 0.5); fill.position.set(-3, -1, -2); scene.add(fill);
+  let model = null;
+  function resize() {
+    const w = meshView.clientWidth || 1, h = meshView.clientHeight || 1;
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(meshView); resize();
+  (function animate() { requestAnimationFrame(animate); if (activeView !== 'mesh') return; controls.update(); renderer.render(scene, camera); })();
+  function clearMesh() { if (model) { scene.remove(model); model = null; } }
+  let statusFor = null;
+  function showStatus(text, view) { statusFor = view; $('status-text').textContent = text; $('status').hidden = false; }
+  function hideStatus(view) { if (statusFor === view) { statusFor = null; $('status').hidden = true; } }
+  async function loadMesh(url) {
+    showStatus('Loading mesh…', 'mesh');
+    let buffer;
+    try { buffer = await fetchBinary(url); } catch (err) { showStatus(`The mesh could not be loaded: ${err.message || err}`, 'mesh'); return; }
+    if (current.glb !== url) return;  // user moved on while downloading
+    new GLTFLoader().parse(buffer, '', (gltf) => {
+      clearMesh();
+      model = gltf.scene;
+      model.traverse((o) => { if (o.isMesh) { o.material.side = THREE.DoubleSide; o.material.wireframe = $('wire').checked; if (o.material.map) o.material.map.colorSpace = THREE.SRGBColorSpace; } });
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3()).length();
+      model.position.sub(box.getCenter(new THREE.Vector3()));
+      scene.add(model);
+      camera.position.set(0, size * 0.15, size * 1.9); controls.target.set(0, 0, 0); controls.update();
+      hideStatus('mesh');
+    }, undefined, (err) => showStatus(`The mesh could not be loaded: ${err.message || err}`, 'mesh'));
+  }
+  $('wire').addEventListener('change', () => model?.traverse((o) => { if (o.isMesh) o.material.wireframe = $('wire').checked; }));
+  $('rotate').addEventListener('change', () => { controls.autoRotate = $('rotate').checked; if (splatViewer?.controls) splatViewer.controls.autoRotate = $('rotate').checked; });
+
+  // ---------------- splat viewer
+  async function teardownSplat() {
+    if (!splatViewer) return;
+    const v = splatViewer; splatViewer = null;
+    try { v.stop?.(); } catch (e) { /* not started */ }
+    try { await v.dispose(); } catch (e) { /* the library throws if its canvas was already detached */ }
+    $('splat-view').replaceChildren();
+  }
+  async function loadSplat(item) {
+    if (splatLoadedFor === item.id) return;
+    splatLoadedFor = item.id;
+    showStatus('Loading splat…', 'splat');
+    try {
+      splatModule = splatModule || await import('./gaussian-splats-3d.module.js');
+      await teardownSplat();
+      const c = item.camera;
+      splatViewer = new splatModule.Viewer({
+        rootElement: $('splat-view'), cameraUp: c.up, initialCameraPosition: c.position, initialCameraLookAt: c.target,
+        sharedMemoryForWorkers: false, gpuAcceleratedSort: false, dynamicScene: false, antialiased: true,
+        sphericalHarmonicsDegree: 0, useBuiltInControls: true,
+      });
+      const bytes = await fetchBinary(item.splat);
+      if (splatLoadedFor !== item.id) return;  // user moved on while downloading
+      const buffer = await splatModule.PlyLoader.loadFromFileData(bytes, 3, 0, false, 0);
+      await splatViewer.addSplatBuffers([buffer], [{ splatAlphaRemovalThreshold: 3 }], true, false, false);
+      splatViewer.start();
+      if (splatViewer.controls) { splatViewer.controls.autoRotate = $('rotate').checked; splatViewer.controls.autoRotateSpeed = 1.6; }
+      hideStatus('splat');
+    } catch (err) {
+      console.error(err);
+      showStatus(`The splat viewer could not start in this browser (${err.message || err}). The mesh and depth views still work.`, 'splat');
+    }
+  }
+
+  select(manifest[0].id);
+  window.gallery = { get splatViewer() { return splatViewer; }, get activeView() { return activeView; }, get current() { return current; } };
+</script>
+
+</body>
+</html>

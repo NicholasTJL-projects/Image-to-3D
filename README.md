@@ -28,6 +28,13 @@ docker compose up --build        # http://localhost:8000
 
 Then open the page, drop in a photo of a single subject, and press **Reconstruct**.
 
+## Static site (Vercel)
+
+The Python backend needs a server, but the results gallery and the app's front end are static.
+`site/` holds them, assembled by `scripts/build_site.py`, and `vercel.json` points Vercel at that
+folder with no build step. On a static host the app page shows how to connect a backend; set
+`window.IMAGE_TO_3D_API` in `site/app/config.js` to a hosted API's URL to make it live.
+
 ## How it works
 
 | Step | What happens | Code |
