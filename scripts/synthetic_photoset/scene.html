@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#888}canvas{display:block}</style></head>
+<body><script type="module">
+import * as THREE from '../../image_to_3d/web/static/vendor/three.module.js';
+const W = 800, H = 600;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1); document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x9fb3c8);
+const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 100);
+// high-frequency textures so SIFT finds plenty of features
+function noiseTexture(seed, base) {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  let s = seed; const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  g.fillStyle = base; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 2500; i++) { g.fillStyle = `hsl(${rnd() * 360},${40 + rnd() * 50}%,${25 + rnd() * 55}%)`; const r = 3 + rnd() * 16; g.beginPath(); g.arc(rnd() * 512, rnd() * 512, r, 0, 7); g.fill(); }
+  for (let i = 0; i < 300; i++) { g.strokeStyle = `rgba(0,0,0,${0.3 + rnd() * 0.6})`; g.lineWidth = 1 + rnd() * 3; g.beginPath(); g.moveTo(rnd() * 512, rnd() * 512); g.lineTo(rnd() * 512, rnd() * 512); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const mats = [1, 2, 3, 4, 5, 6].map(i => new THREE.MeshStandardMaterial({ map: noiseTexture(i * 7919, `hsl(${i * 55},50%,55%)`), roughness: 0.9 }));
+const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.0), mats); box.position.set(0, 0.4, 0); scene.add(box);
+const torus = new THREE.Mesh(new THREE.TorusKnotGeometry(0.28, 0.09, 160, 24), new THREE.MeshStandardMaterial({ map: noiseTexture(424242, '#c84'), roughness: 0.8 }));
+torus.position.set(0, 1.15, 0); scene.add(torus);
+const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.7, 32), new THREE.MeshStandardMaterial({ map: noiseTexture(99, '#4a8'), roughness: 0.9 }));
+cyl.position.set(0.95, 0.35, -0.4); scene.add(cyl);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.MeshStandardMaterial({ map: noiseTexture(31337, '#776655'), roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(3, 5, 2); scene.add(sun);
+window.shoot = (i, n, ring) => {
+  const a = 2 * Math.PI * i / n + (ring ? 0.1 : 0);
+  const r = ring ? 3.6 : 3.0, y = ring ? 2.4 : 1.4;
+  camera.position.set(r * Math.cos(a), y, r * Math.sin(a)); camera.lookAt(0, 0.55, 0);
+  renderer.render(scene, camera);
+  return renderer.domElement.toDataURL('image/jpeg', 0.92);
+};
+window.ready = true;
+</script></body></html>

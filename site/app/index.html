@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image to 3D · Kunami Labs</title>
+  <meta name="description" content="Upload one photo and get a textured 3D model and a Gaussian splat back. Open source, by Kunami Labs.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Cdefs%3E%3ClinearGradient id=%27g%27 x1=%270%27 y1=%270%27 x2=%271%27 y2=%271%27%3E%3Cstop offset=%270%27 stop-color=%27%236ee7b7%27/%3E%3Cstop offset=%271%27 stop-color=%27%2360a5fa%27/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27url(%23g)%27/%3E%3Cpath d=%27M16 6l9 5v10l-9 5-9-5V11z%27 fill=%27none%27 stroke=%27%230b0d12%27 stroke-width=%272.2%27/%3E%3Cpath d=%27M16 16l9-5M16 16v10M16 16l-9-5%27 stroke=%27%230b0d12%27 stroke-width=%272.2%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/" } }
+  </script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Image <span class="arrow">→</span> 3D</h1>
+        <p class="sub">Kunami Labs · single photo to textured mesh and Gaussian splat</p>
+      </div>
+    </div>
+    <nav>
+      <a href="https://github.com/NicholasTJL-projects/Image-to-3D" target="_blank" rel="noopener">GitHub</a>
+      <a href="./api/docs" target="_blank" rel="noopener">API</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="panel controls">
+      <div id="no-backend" class="error" hidden>
+        No reconstruction backend is connected to this page, so uploads are off. The camera capture below still works: shoot a photo set here and download it. The models run on a server: start one with
+        <code>docker compose up</code> from the repository and open it locally, or point this page at a hosted
+        API in <code>config.js</code>. The <a href="../">gallery</a> shows finished results.
+      </div>
+      <div id="drop" class="drop" tabindex="0" role="button" aria-label="Upload an image">
+        <input id="file" type="file" accept="image/*" hidden>
+        <img id="thumb" alt="" hidden>
+        <div class="drop-text">
+          <strong>Drop a photo here</strong>
+          <span>or click to browse · paste works too</span>
+          <span class="hint">JPEG, PNG, WebP · one clear subject works best</span>
+        </div>
+      </div>
+
+      <form id="options" class="options">
+        <label class="row">
+          <span>Remove background</span>
+          <input type="checkbox" name="remove_background" checked>
+        </label>
+        <label class="row">
+          <span>Close the back</span>
+          <input type="checkbox" name="mirror_back" checked>
+        </label>
+        <label class="row slider">
+          <span>Relief <output id="relief-out">0.35</output></span>
+          <input type="range" name="relief" min="0.05" max="1.2" step="0.05" value="0.35">
+        </label>
+        <label class="row">
+          <span>Depth model</span>
+          <select name="depth_backend" id="depth-backend"><option value="auto">auto</option></select>
+        </label>
+        <button id="go" type="submit" disabled>Reconstruct</button>
+      </form>
+
+      <div id="progress" class="progress" hidden>
+        <div class="bar"><div id="bar-fill"></div></div>
+        <div id="stage" class="stage">queued</div>
+      </div>
+      <div id="error" class="error" hidden></div>
+
+      <div id="result" class="result" hidden>
+        <dl class="stats">
+          <div><dt>Vertices</dt><dd id="st-verts">–</dd></div>
+          <div><dt>Triangles</dt><dd id="st-faces">–</dd></div>
+          <div><dt>Gaussians</dt><dd id="st-gauss">–</dd></div>
+          <div><dt>Time</dt><dd id="st-time">–</dd></div>
+        </dl>
+        <div id="coverage" class="coverage" hidden>
+          <strong id="cov-title">Coverage</strong>
+          <ul id="cov-advice"></ul>
+        </div>
+        <div class="downloads">
+          <a id="dl-glb" class="btn" download>Download GLB</a>
+          <a id="dl-ply" class="btn" download>Download splat PLY</a>
+          <a id="dl-depth" class="btn ghost" download>Depth map</a>
+        </div>
+      </div>
+
+      <section id="multiview" class="multiview" hidden>
+        <h2>Full 3D from many angles</h2>
+        <p>Walk around one object and get a Gaussian Splatting scene. Takes a few minutes.</p>
+        <div class="seg" role="tablist" aria-label="Capture source">
+          <button type="button" class="seg-btn active" data-mode="camera" role="tab">Camera</button>
+          <button type="button" class="seg-btn" data-mode="video" role="tab">Video</button>
+          <button type="button" class="seg-btn" data-mode="photos" role="tab">Photos</button>
+        </div>
+
+        <div id="mv-camera" class="mv-mode">
+          <div class="cam-wrap">
+            <video id="cam-preview" playsinline muted autoplay hidden></video>
+            <canvas id="cam-canvas" hidden></canvas>
+            <div id="cam-overlay" class="cam-overlay">
+              <strong id="cam-count">0 shots</strong>
+              <span id="cam-hint">Point at the object, press Start, then walk slowly around it.</span>
+            </div>
+          </div>
+          <div class="cam-controls">
+            <button type="button" id="cam-start" class="btn ghost">Start camera</button>
+            <button type="button" id="cam-shoot" class="btn ghost" disabled>Start capturing</button>
+            <button type="button" id="cam-reset" class="btn ghost" disabled>Clear</button>
+          </div>
+          <p class="hint">One still every half second at full camera resolution. 40 to 80 shots in two loops at different heights works well.</p>
+        </div>
+
+        <div id="mv-video" class="mv-mode" hidden>
+          <label class="btn ghost file-btn">
+            <input id="mv-video-file" type="file" accept="video/*" hidden>
+            <span id="mv-video-label">Choose a video</span>
+          </label>
+          <p class="hint">10 to 30 seconds, 4K if possible, slow and steady, exposure locked. The sharpest frames are picked automatically.</p>
+        </div>
+
+        <div id="mv-photos" class="mv-mode" hidden>
+          <label class="btn ghost file-btn">
+            <input id="mv-files" type="file" accept="image/*" multiple hidden>
+            <span id="mv-label">Choose photos</span>
+          </label>
+          <p class="hint">20 to 200 photos, about 70 % overlap between neighbours, every side covered.</p>
+        </div>
+
+        <label class="row">
+          <span>Object only (remove background)</span>
+          <input type="checkbox" id="mv-object-only" checked>
+        </label>
+        <button id="mv-go" type="button" disabled>Reconstruct in 3D</button>
+        <button id="mv-download" type="button" class="btn ghost" disabled hidden>Download photos (.zip)</button>
+      </section>
+
+      <details class="about">
+        <summary>How it works</summary>
+        <ol>
+          <li>The subject is cut out with a U²-Net segmentation model (falls back to GrabCut).</li>
+          <li>A monocular depth network (Depth Anything V2, or MiDaS v2.1 as a fallback) predicts relative depth for every pixel.</li>
+          <li>Pixels are back-projected through a pinhole camera, meshed, textured with the photo and mirrored to close the back.</li>
+          <li>The same points are written as 3D Gaussians, so the result also opens in splat viewers.</li>
+        </ol>
+        <p>One photo cannot see the hidden sides of an object, so the output is a relief ("2.5D") model. For a full 3D capture, the <a href="https://github.com/NicholasTJL-projects/Image-to-3D#multi-view-capture" target="_blank" rel="noopener">multi-view pipeline</a> in the same repo turns photos taken from many angles into a Gaussian Splatting scene.</p>
+      </details>
+    </section>
+
+    <section class="panel viewer-panel">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-view="mesh" role="tab">Mesh</button>
+        <button class="tab" data-view="splat" role="tab">Splat</button>
+        <button class="tab" data-view="depth" role="tab">Depth</button>
+        <span class="spacer"></span>
+        <label class="toggle"><input id="autorotate" type="checkbox" checked> rotate</label>
+        <label class="toggle"><input id="wire" type="checkbox"> wireframe</label>
+      </div>
+      <div id="viewer" class="viewer">
+        <div id="mesh-view" class="view active"></div>
+        <div id="splat-view" class="view"></div>
+        <div id="depth-view" class="view depth-view"><img id="depth-img" alt="depth map" hidden></div>
+        <div id="placeholder" class="placeholder">
+          <p>Your 3D model will appear here.</p>
+          <p class="small">Drag to orbit · scroll to zoom · right-drag to pan</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>© Kunami Labs · MIT licensed · built with Depth Anything V2, MiDaS, U²-Net, Three.js and GaussianSplats3D</span>
+  </footer>
+
+  <script src="./config.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

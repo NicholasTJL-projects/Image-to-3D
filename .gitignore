@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# capture workspaces and web job output (large binaries)
+workspaces/
+jobs/
+node_modules/
+*.mp4
+*.mov
+*.ply
+!tests/**/*.ply

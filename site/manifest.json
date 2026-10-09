@@ -1,0 +1,200 @@
+[
+ {
+  "id": "cookie",
+  "label": "Cookie",
+  "kind": "single",
+  "blurb": "Your photo: a filled biscuit with an embossed heart, shot from above on a napkin. Segmentation and the relief depth of the stamp are the test here.",
+  "glb": "assets/cookie/model.glb",
+  "splat": "assets/cookie/splat.ply",
+  "input": "assets/cookie/input.jpg",
+  "depth": "assets/cookie/depth.png",
+  "stats": {
+   "vertices": 38854,
+   "faces": 75404,
+   "gaussians": 19427,
+   "seconds": 24.5,
+   "depth_model": "depth_anything"
+  },
+  "camera": {
+   "position": [
+    0,
+    0.15,
+    2.4
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "up": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "id": "cookie14",
+  "label": "Cookie \u00b7 14 photos",
+  "kind": "multiview",
+  "blurb": "Your 14 photos in object-only mode: the napkin is masked out and Gaussians outside the silhouette are pruned, so only the biscuit remains. Coverage poor: 11 of 14 views posed, 114\u00b0 around the object, so the far side is thin.",
+  "input": "assets/cookie14/input.jpg",
+  "stats": {
+   "cameras": 11,
+   "points": 2537,
+   "gaussians": 24242,
+   "psnr": 35.4
+  },
+  "camera": {
+   "position": [
+    -5.9625,
+    -0.2682,
+    -4.6441
+   ],
+   "target": [
+    -2.5082,
+    0.2084,
+    8.2689
+   ],
+   "up": [
+    -0.2235,
+    -0.9436,
+    -0.2444
+   ]
+  },
+  "splat": "assets/cookie14/splat.ply"
+ },
+ {
+  "id": "chelsea",
+  "label": "Cat",
+  "kind": "single",
+  "blurb": "Portrait of a tabby cat. Fur and whiskers test the silhouette.",
+  "glb": "assets/chelsea/model.glb",
+  "splat": "assets/chelsea/splat.ply",
+  "input": "assets/chelsea/input.jpg",
+  "depth": "assets/chelsea/depth.png",
+  "stats": {
+   "vertices": 84458,
+   "faces": 165532,
+   "gaussians": 42229,
+   "seconds": 2.1,
+   "depth_model": "depth_anything"
+  },
+  "camera": {
+   "position": [
+    0,
+    0.15,
+    2.4
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "up": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "id": "coffee",
+  "label": "Espresso",
+  "kind": "single",
+  "blurb": "Cup on a saucer. The rim and handle test depth edges.",
+  "glb": "assets/coffee/model.glb",
+  "splat": "assets/coffee/splat.ply",
+  "input": "assets/coffee/input.jpg",
+  "depth": "assets/coffee/depth.png",
+  "stats": {
+   "vertices": 64578,
+   "faces": 124980,
+   "gaussians": 32289,
+   "seconds": 2.2,
+   "depth_model": "depth_anything"
+  },
+  "camera": {
+   "position": [
+    0,
+    0.15,
+    2.4
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "up": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "id": "astronaut",
+  "label": "Astronaut",
+  "kind": "single",
+  "blurb": "Portrait with a helmet in front. Tests layered depth.",
+  "glb": "assets/astronaut/model.glb",
+  "splat": "assets/astronaut/splat.ply",
+  "input": "assets/astronaut/input.jpg",
+  "depth": "assets/astronaut/depth.png",
+  "stats": {
+   "vertices": 111426,
+   "faces": 218904,
+   "gaussians": 55713,
+   "seconds": 1.8,
+   "depth_model": "depth_anything"
+  },
+  "camera": {
+   "position": [
+    0,
+    0.15,
+    2.4
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "up": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "id": "multiview",
+  "label": "Photo set",
+  "kind": "multiview",
+  "blurb": "36 synthetic photos of a textured scene, posed with COLMAP and trained for 600 iterations on CPU. Splat only.",
+  "splat": "assets/multiview/splat.ply",
+  "input": "assets/multiview/input.jpg",
+  "stats": {
+   "cameras": 32,
+   "points": 13405,
+   "gaussians": 13405,
+   "psnr": 19.1
+  },
+  "camera": {
+   "position": [
+    -5.4064,
+    -1.0118,
+    -1.0091
+   ],
+   "target": [
+    0.45,
+    1.789,
+    0.5442
+   ],
+   "up": [
+    0.0653,
+    -0.9571,
+    -0.2822
+   ]
+  }
+ }
+]

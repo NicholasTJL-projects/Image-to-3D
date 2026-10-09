@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - jobs:/data
+    environment:
+      IMAGE_TO_3D_MAX_SIDE: "512"
+      IMAGE_TO_3D_WORKERS: "1"
+volumes:
+  jobs:
