@@ -94,7 +94,8 @@ def select_frames(frames: Iterable[np.ndarray], cfg: CaptureConfig) -> list[np.n
 def capture(source: str | int, out_dir: str | Path, cfg: CaptureConfig | None = None, *, clean: bool = False) -> list[Path]:
     """Extract frames from ``source`` into ``out_dir/`` as ``frame_00000.jpg``...
 
-    ``source`` may be a video file, a webcam index (``0``), or a folder of photos.
+    ``source`` may be a video file, a webcam index (``0``), a folder of photos, or a zip of photos
+    (as downloaded from the web app's camera capture).
     """
     cfg = cfg or CaptureConfig()
     out_dir = Path(out_dir)
@@ -104,6 +105,17 @@ def capture(source: str | int, out_dir: str | Path, cfg: CaptureConfig | None = 
 
     if isinstance(source, str) and Path(source).is_dir():
         frames = iter_folder_images(source)
+    elif isinstance(source, str) and Path(source).suffix.lower() == ".zip":
+        import tempfile
+        import zipfile
+
+        tmp = Path(tempfile.mkdtemp(prefix="capture_zip_"))
+        with zipfile.ZipFile(source) as z:
+            for info in z.infolist():
+                name = Path(info.filename).name
+                if not info.is_dir() and Path(name).suffix.lower() in IMAGE_EXTS and ".." not in info.filename:
+                    (tmp / name).write_bytes(z.read(info))
+        frames = iter_folder_images(tmp)
     else:
         src: str | int = int(source) if isinstance(source, str) and source.isdigit() else source
         frames = iter_video_frames(src, cfg.every_nth, cfg.max_frames)

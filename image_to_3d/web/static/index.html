@@ -29,7 +29,7 @@
   <main class="layout">
     <section class="panel controls">
       <div id="no-backend" class="error" hidden>
-        No reconstruction backend is connected to this page. The models run on a server: start one with
+        No reconstruction backend is connected to this page, so uploads are off. The camera capture below still works: shoot a photo set here and download it. The models run on a server: start one with
         <code>docker compose up</code> from the repository and open it locally, or point this page at a hosted
         API in <code>config.js</code>. The <a href="../">gallery</a> shows finished results.
       </div>
@@ -134,6 +134,7 @@
           <input type="checkbox" id="mv-object-only" checked>
         </label>
         <button id="mv-go" type="button" disabled>Reconstruct in 3D</button>
+        <button id="mv-download" type="button" class="btn ghost" disabled hidden>Download photos (.zip)</button>
       </section>
 
       <details class="about">

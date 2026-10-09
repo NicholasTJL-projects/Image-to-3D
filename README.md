@@ -33,7 +33,9 @@ Then open the page, drop in a photo of a single subject, and press **Reconstruct
 The Python backend needs a server, but the results gallery and the app's front end are static.
 `site/` holds them, assembled by `scripts/build_site.py`, and `vercel.json` points Vercel at that
 folder with no build step. On a static host the app page shows how to connect a backend; set
-`window.IMAGE_TO_3D_API` in `site/app/config.js` to a hosted API's URL to make it live.
+`window.IMAGE_TO_3D_API` in `site/app/config.js` to a hosted API's URL to make it live. Camera capture
+still works there: the page bundles the shots into a zip that `image-to-3d capture shots.zip ws/`
+accepts directly.
 
 ## How it works
 

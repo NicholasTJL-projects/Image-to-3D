@@ -42,3 +42,16 @@ def test_capture_from_video_and_folder(tmp_path):
     again = capture(str(tmp_path / "frames"), tmp_path / "frames2", CaptureConfig(max_side=48))
     assert len(again) == 4
     assert cv2.imread(str(again[0])).shape[:2] == (32, 48)
+
+
+def test_capture_from_zip(tmp_path):
+    import zipfile
+
+    zpath = tmp_path / "shots.zip"
+    with zipfile.ZipFile(zpath, "w") as z:
+        for i in range(3):
+            ok, buf = cv2.imencode(".jpg", _sharp())
+            z.writestr(f"capture/shot_{i:04d}.jpg", buf.tobytes())
+        z.writestr("capture/notes.txt", "ignored")
+    paths = capture(str(zpath), tmp_path / "frames", CaptureConfig(max_side=None))
+    assert len(paths) == 3

@@ -59,7 +59,21 @@ fetch(`${API}/api/health`).then((r) => r.json()).then((h) => {
   if (n) n.hidden = false;
   goBtn.disabled = true;
   drop.classList.add('disabled');
+  enableCaptureOnly();
 });
+
+// Static host, no backend: the camera still works, so let people capture a photo set here
+// and download it as a zip to reconstruct later (web app with a backend, or the CLI).
+let captureOnly = false;
+function enableCaptureOnly() {
+  captureOnly = true;
+  $('multiview').hidden = false;
+  document.querySelectorAll('.seg-btn').forEach((b) => { if (b.dataset.mode !== 'camera') b.hidden = true; });
+  mvGo.hidden = true;
+  $('mv-object-only').closest('label').hidden = true;
+  $('mv-download').hidden = false;
+  $('cam-hint').textContent = 'No backend here: capture a photo set, download it, and reconstruct it with the app or the CLI.';
+}
 
 // ----------------------------------------------------------------- multi-view: camera / video / photos
 const mvFiles = $('mv-files'), mvVideo = $('mv-video-file'), mvGo = $('mv-go');
@@ -75,6 +89,7 @@ function mvSource() {
 function mvRefresh() {
   const src = mvSource();
   mvGo.disabled = src.video ? false : (src.photos || []).length < 3;
+  $('mv-download').disabled = camShots.length === 0;
 }
 document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
   mvMode = b.dataset.mode;
@@ -140,6 +155,48 @@ function stopShooting() { if (camTimer) { clearInterval(camTimer); camTimer = nu
 $('cam-start').addEventListener('click', () => (camStream ? stopCamera() : startCamera()));
 $('cam-shoot').addEventListener('click', () => (camTimer ? stopShooting() : startShooting()));
 $('cam-reset').addEventListener('click', () => { camShots = []; $('cam-count').textContent = '0 shots'; $('cam-reset').disabled = true; mvRefresh(); });
+
+// --- zip (store only, no compression): local headers + central directory, per PKWARE APPNOTE
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function makeZip(entries) {  // entries: [{ name, blob }]
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  for (const { name, blob } of entries) {
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const nameBytes = enc.encode(name), crc = crc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true); local.setUint16(8, 0, true);
+    local.setUint16(10, dosTime, true); local.setUint16(12, dosDate, true); local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true); local.setUint32(22, data.length, true); local.setUint16(26, nameBytes.length, true); local.setUint16(28, 0, true);
+    parts.push(local.buffer, nameBytes, data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true); cd.setUint16(10, 0, true);
+    cd.setUint16(12, dosTime, true); cd.setUint16(14, dosDate, true); cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+    cd.setUint16(28, nameBytes.length, true); cd.setUint16(30, 0, true); cd.setUint16(32, 0, true); cd.setUint16(34, 0, true); cd.setUint16(36, 0, true);
+    cd.setUint32(38, 0, true); cd.setUint32(42, offset, true);
+    central.push(cd.buffer, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const cdSize = central.reduce((n, b) => n + (b.byteLength ?? b.length), 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(4, 0, true); end.setUint16(6, 0, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true); end.setUint16(20, 0, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+$('mv-download').addEventListener('click', async () => {
+  if (!camShots.length) return;
+  stopShooting();
+  const zip = await makeZip(camShots.map((blob, i) => ({ name: `capture/shot_${String(i).padStart(4, '0')}.jpg`, blob })));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(zip);
+  a.download = `image-to-3d-capture-${camShots.length}-photos.zip`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+});
 
 mvGo.addEventListener('click', async () => {
   hideError();
